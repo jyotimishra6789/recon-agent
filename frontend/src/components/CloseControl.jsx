@@ -30,6 +30,12 @@ export default function CloseControl({ exceptions, matches, auditLog, reconcileR
     });
   };
 
+  const signOffHint = openExceptions > 0
+    ? `Resolve ${openExceptions} open exception${openExceptions === 1 ? "" : "s"} in the Exceptions tab before signing off.`
+    : matches.length === 0
+      ? "Run reconciliation before signing off this period."
+      : "Enter a reviewer name to enable sign-off.";
+
   return (
     <section className={`close-control ${signedOff ? "is-signed-off" : ""}`}>
       <div className="close-heading">
@@ -52,7 +58,10 @@ export default function CloseControl({ exceptions, matches, auditLog, reconcileR
         <div className="signoff-form">
           <label>Reviewer name<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder="e.g. A. Mehta" /></label>
           <label>Close notes <span className="optional">optional</span><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Add context for the audit record" /></label>
-          <button className="signoff-btn" disabled={!canSignOff} onClick={() => onSignOff({ reviewer: reviewer.trim(), notes: notes.trim() })}>Sign off period</button>
+          <div className="signoff-action">
+            <button className="signoff-btn" disabled={!canSignOff} title={!canSignOff ? signOffHint : "Record period sign-off"} onClick={() => onSignOff({ reviewer: reviewer.trim(), notes: notes.trim() })}>Sign off period</button>
+            {!canSignOff && <span className="signoff-hint">{signOffHint}</span>}
+          </div>
         </div>
       )}
       <div className="close-footer">

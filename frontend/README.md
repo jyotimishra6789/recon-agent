@@ -62,6 +62,29 @@ Frontend opens at `http://localhost:3000` and talks to the backend automatically
 5. **Audit Trail** tab — full explainable log of every decision the system made.
 6. **Ask the Data** panel — natural-language questions translated to SQL live.
 
+## Criteria-to-evidence mapping
+
+The three headline criteria are visible in the product and backed by reproducible
+implementation details. Judges can use this mapping directly during the demo:
+
+| Criterion | Where to see it | How this project satisfies it |
+|---|---|---|
+| **Throughput** | Run **Reconciliation**, then open the summary cards or run the stress test | The matching engine uses deterministic Tier 1 SQL/hash-bucket matching for routine records, supports split/batch relationships through `match_members`, and measures each run's `duration_ms`. The `POST /stress-test` endpoint compares the optimized matcher with a naive nested-loop baseline at increasing batch sizes. |
+| **Measured accuracy** | Summary cards and **Matches** tab | The app reports the match rate from actual matched and total bank records. Each match shows a confidence score, matching tier (`Tier 1 · SQL` or `Tier 2 · LLM`), amount, and plain-language reason. The benchmark below records a reproducible local result rather than presenting an unsupported accuracy claim. |
+| **Honest exception list** | **Exceptions** tab and **Open Exceptions** summary card | Records that cannot be confidently matched are explicitly flagged with source, reference, amount, date, and reason. Users resolve them with a tagged reason, and unresolved items remain visible instead of being counted as successful matches. |
+
+### Supporting control evidence
+
+- **Traceability:** the **Audit Trail** records match attempts, successful matches,
+   flagged exceptions, and human resolutions with timestamps and details.
+- **Human-in-the-loop learning:** exception resolutions update the adaptive
+   `exception_patterns` table and increase trust for recurring confirmed patterns.
+- **Period close:** the Period Close control blocks sign-off while exceptions remain,
+   records reviewer, notes, and timestamp, and exports the summary, matches,
+   exceptions, sign-off, and audit trail as an audit-ready JSON report.
+- **Reproducibility:** `/health`, `/stats/summary`, `/matches`, `/exceptions`, and
+   `/audit-log` expose the same operational evidence used by the dashboard.
+
 ## Notes for the demo narrative
 
 - Don't just show the happy path — open the Exceptions tab and be upfront about
