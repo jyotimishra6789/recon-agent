@@ -10,7 +10,7 @@ const SUGGESTIONS = [
 
 export default function ChatbotQA() {
   const [messages, setMessages] = useState([
-    { role: "bot", text: "Data ke baare mein kuch bhi poochho — jaise \"total unresolved amount kitna hai?\"" },
+    { role: "bot", text: "Ask anything about data \"what is the total unresolved amount ?\"" },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -71,7 +71,7 @@ export default function ChatbotQA() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Poochho kuch bhi apne data ke baare mein…"
+          placeholder="Type something…"
           disabled={busy}
         />
         <button onClick={() => send()} disabled={busy}>{busy ? "…" : "Ask"}</button>
