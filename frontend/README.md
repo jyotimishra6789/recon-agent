@@ -51,6 +51,24 @@ npm start
 
 Frontend opens at `http://localhost:3000` and talks to the backend automatically.
 
+## Vercel deployment
+
+Deploy `frontend` as the Vercel project root, or deploy this repository with the
+root `vercel.json`. The Vercel build serves the React frontend from
+`frontend/build`.
+
+Set this Vercel environment variable before deploying:
+
+```text
+REACT_APP_API_URL=https://your-backend-host.example.com
+```
+
+The backend is a FastAPI process with SQLite-backed local state, so it should run
+on a Python host such as Render, Railway, or a VM rather than as a Vercel static
+function. Configure the backend's CORS policy and use its public HTTPS URL for
+`REACT_APP_API_URL`. Vercel's filesystem is ephemeral, so deploying the current
+SQLite backend directly there would not provide durable reconciliation state.
+
 ## Demo flow
 
 1. Click **Run Reconciliation** — pipeline runs Tier 1 (SQL exact match) then
