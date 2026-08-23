@@ -52,6 +52,8 @@ AI_MIN_APPROVAL_CONFIDENCE = 90.0
 AI_SUSPICIOUS_EXCEPTIONS = {"duplicate", "amount_mismatch_unexplained", "missing_counterpart", "unresolved"}
 last_reconcile_result = None
 reconciliation_lock = threading.Lock()
+ai_tables_lock = threading.Lock()
+ai_tables_ready = False
 
 
 def _process_pending_receipts():
@@ -496,29 +498,37 @@ def classify_receipt(filename: str, receipt_text: str):
 
 def ensure_ai_tables(conn):
     """Keep databases created before the AI workflow compatible."""
-    conn.execute("""CREATE TABLE IF NOT EXISTS receipt_memory (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_ref TEXT NOT NULL UNIQUE,
-        merchant TEXT NOT NULL, amount REAL NOT NULL, receipt_date TEXT NOT NULL,
-        category TEXT, status TEXT DEFAULT 'queued', context TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(receipt_memory)").fetchall()}
-    for name, definition in (("receipt_filename", "TEXT"), ("receipt_text", "TEXT"), ("is_expense", "INTEGER DEFAULT 1")):
-        if name not in columns:
-            conn.execute(f"ALTER TABLE receipt_memory ADD COLUMN {name} {definition}")
-    conn.execute("""CREATE TABLE IF NOT EXISTS finance_policies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, policy_name TEXT NOT NULL UNIQUE,
-        policy_text TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    policies = (
-        ("match_tolerance", "Exact amount matches allow a tolerance of 0.01 rupees and a date window of 3 days."),
-        ("exception_review", "Unresolved amount mismatches require human review before reconciliation status is resolved."),
-        ("audit_requirement", "Every automated reconciliation status change must include a reason and an audit event."),
-        ("ai_guardrails", "AI cannot approve transactions over 10000 rupees, low-confidence decisions, suspicious exceptions, or amount mismatches without human review."),
-    )
-    conn.executemany("INSERT OR IGNORE INTO finance_policies (policy_name, policy_text) VALUES (?, ?)", policies)
-    conn.execute("""CREATE TABLE IF NOT EXISTS finance_memory (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, vendor TEXT,
-        memory_type TEXT NOT NULL, metadata TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    global ai_tables_ready
+    if ai_tables_ready:
+        return
+    with ai_tables_lock:
+        if ai_tables_ready:
+            return
+        conn.execute("""CREATE TABLE IF NOT EXISTS receipt_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_ref TEXT NOT NULL UNIQUE,
+            merchant TEXT NOT NULL, amount REAL NOT NULL, receipt_date TEXT NOT NULL,
+            category TEXT, status TEXT DEFAULT 'queued', context TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(receipt_memory)").fetchall()}
+        for name, definition in (("receipt_filename", "TEXT"), ("receipt_text", "TEXT"), ("is_expense", "INTEGER DEFAULT 1")):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE receipt_memory ADD COLUMN {name} {definition}")
+        conn.execute("""CREATE TABLE IF NOT EXISTS finance_policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, policy_name TEXT NOT NULL UNIQUE,
+            policy_text TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+        policies = (
+            ("match_tolerance", "Exact amount matches allow a tolerance of 0.01 rupees and a date window of 3 days."),
+            ("exception_review", "Unresolved amount mismatches require human review before reconciliation status is resolved."),
+            ("audit_requirement", "Every automated reconciliation status change must include a reason and an audit event."),
+            ("ai_guardrails", "AI cannot approve transactions over 10000 rupees, low-confidence decisions, suspicious exceptions, or amount mismatches without human review."),
+        )
+        conn.executemany("INSERT OR IGNORE INTO finance_policies (policy_name, policy_text) VALUES (?, ?)", policies)
+        conn.execute("""CREATE TABLE IF NOT EXISTS finance_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, vendor TEXT,
+            memory_type TEXT NOT NULL, metadata TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+        conn.commit()
+        ai_tables_ready = True
 
 
 def remember_finance_context(content: str, metadata: dict, memory_type: str):
