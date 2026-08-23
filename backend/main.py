@@ -722,8 +722,15 @@ def qa_stream(body: QARequest):
         yield sse("context", {"items": context, "reranked": True})
         local_answer = run_local_qa(question)
         if local_answer:
+            rows = local_answer.get("result", [])
+            result_text = ""
+            if rows:
+                result_text = " " + "; ".join(
+                    ", ".join(f"{key}: {value}" for key, value in row.items())
+                    for row in rows[:5]
+                )
             structured = {
-                "answer": local_answer.get("explanation", ""),
+                "answer": local_answer.get("explanation", "") + result_text,
                 "matched_transaction": None, "confidence_score": None,
                 "reason": "Answered from the local reconciliation database.",
                 "exception_type": "none", "human_review_required": False,
