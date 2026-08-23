@@ -54,7 +54,7 @@ last_reconcile_result = None
 reconciliation_lock = threading.Lock()
 
 
-def process_pending_receipts():
+def _process_pending_receipts():
     """Promote classified expenses into the ledger and run reconciliation."""
     global last_reconcile_result
     conn = get_conn()
@@ -86,9 +86,13 @@ def process_pending_receipts():
     conn.commit()
     conn.close()
     if promoted:
-        with reconciliation_lock:
-            last_reconcile_result = run_reconciliation()
+        last_reconcile_result = run_reconciliation()
     return {"processed": promoted, "reconciliation": last_reconcile_result if promoted else None}
+
+
+def process_pending_receipts():
+    with reconciliation_lock:
+        return _process_pending_receipts()
 
 
 def initialize_database_if_needed():
