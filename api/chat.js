@@ -2,6 +2,8 @@ import { google } from "@ai-sdk/google";
 import { Output, streamText, tool } from "ai";
 import { z } from "zod";
 
+export const runtime = "nodejs";
+
 const backendUrl = process.env.RECON_BACKEND_URL || "http://127.0.0.1:8000";
 const geminiModel = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
@@ -125,6 +127,9 @@ export default async function handler(request) {
   const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!question || question.length > 500) {
     return Response.json({ error: "Question must be between 1 and 500 characters" }, { status: 400 });
+  }
+  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return Response.json({ error: "Missing GOOGLE_GENERATIVE_AI_API_KEY in this Vercel environment" }, { status: 503 });
   }
 
   let curatedContext = { context: { records: [], previous_handling: [] }, unavailable: true };
