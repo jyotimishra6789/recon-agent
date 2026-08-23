@@ -126,9 +126,18 @@ export default async function handler(request) {
     return Response.json({ error: "Question must be between 1 and 500 characters" }, { status: 400 });
   }
 
-  const curatedContext = await financeRequest(
-    `/finance/context?q=${encodeURIComponent(question)}&limit=6&max_chars=6000`,
-  );
+  let curatedContext = { context: { records: [], previous_handling: [] }, unavailable: true };
+  try {
+    curatedContext = await financeRequest(
+      `/finance/context?q=${encodeURIComponent(question)}&limit=6&max_chars=6000`,
+    );
+  } catch (error) {
+    curatedContext = {
+      context: { records: [], previous_handling: [] },
+      unavailable: true,
+      message: "Finance backend is unavailable; do not invent database values.",
+    };
+  }
 
   const result = streamText({
     model: google("gemini-3.6-flash"),
