@@ -45,13 +45,13 @@ export const api = {
     let buffer = "";
     while (true) {
       const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
       if (STREAM_URL === "/api/chat") {
-        if (value) onEvent("text", { delta: decoder.decode(value, { stream: true }) });
+        if (value) onEvent("text", { delta: decoder.decode(value, { stream: !done }) });
         if (done) onEvent("done", { source: "claude" });
         if (done) break;
         continue;
       }
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
       const events = buffer.split("\n\n");
       buffer = events.pop() || "";
       events.forEach((chunk) => {

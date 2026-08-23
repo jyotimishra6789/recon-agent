@@ -42,8 +42,14 @@ export default function ChatbotQA() {
             ? { ...message, text: message.text + payload.delta, status: null } : message));
         }
         if (event === "done") {
-          setMessages((m) => m.map((message, index) => index === m.length - 1
-            ? { ...message, status: null } : message));
+          setMessages((m) => m.map((message, index) => {
+            if (index !== m.length - 1) return message;
+            try {
+              return { ...message, structured: JSON.parse(message.text), status: null };
+            } catch {
+              return { ...message, status: null };
+            }
+          }));
         }
       });
     } catch (e) {
@@ -60,6 +66,13 @@ export default function ChatbotQA() {
         {messages.map((m, i) => (
           <div className={`chat-msg ${m.role}`} key={i}>
             <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+            {m.structured && <div className="ai-structured">
+              <strong>{m.structured.answer}</strong>
+              <span>Confidence: {m.structured.confidence_score ?? "N/A"}</span>
+              <span>Reason: {m.structured.reason}</span>
+              <span>Exception: {m.structured.exception_type}</span>
+              {m.structured.matched_transaction && <span>Match: {Object.values(m.structured.matched_transaction).filter((value) => value !== null).join(" · ")}</span>}
+            </div>}
             {m.status && <div className="chat-status">{m.status}</div>}
             {m.sql && <div className="sql-line">{m.sql}</div>}
           </div>

@@ -111,6 +111,89 @@ class ResolveExceptionRequest(BaseModel):
     pattern_type: str | None = None  # e.g. "fee_deduction", "settlement_delay"
 
 
+@app.get("/finance/transactions/{source}/{reference}")
+def finance_transaction(source: str, reference: str):
+    """Fetch one source transaction for the AI finance tool chain."""
+    tables = {
+        "bank": ("bank_txns", "ref_id"),
+        "settlement": ("settlement_txns", "order_id"),
+        "ledger": ("ledger_txns", "invoice_id"),
+    }
+    if source not in tables:
+        raise HTTPException(400, "source must be bank, settlement, or ledger")
+    table, key = tables[source]
+    conn = get_conn()
+    row = conn.execute(f"SELECT * FROM {table} WHERE {key} = ?", (reference,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, f"{source} transaction not found")
+    return {"source": source, "reference": reference, "transaction": dict(row)}
+
+
+@app.get("/finance/invoices/{invoice_id}")
+def finance_invoice(invoice_id: str):
+    """Check the internal ledger invoice used by amount comparison."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM ledger_txns WHERE invoice_id = ?", (invoice_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, "Invoice not found")
+    return {"invoice": dict(row)}
+
+
+class FinanceCompareRequest(BaseModel):
+    transaction_ref: str
+    transaction_amount: float
+    invoice_id: str
+    invoice_amount: float
+    tolerance: float = 0.01
+
+
+@app.post("/finance/compare")
+def finance_compare(body: FinanceCompareRequest):
+    difference = round(body.transaction_amount - body.invoice_amount, 2)
+    return {
+        "transaction_ref": body.transaction_ref,
+        "invoice_id": body.invoice_id,
+        "transaction_amount": body.transaction_amount,
+        "invoice_amount": body.invoice_amount,
+        "difference": difference,
+        "matched": abs(difference) <= body.tolerance,
+        "tolerance": body.tolerance,
+    }
+
+
+class FinanceStatusRequest(BaseModel):
+    source_ref: str
+    status: str
+    resolution_reason: str
+    pattern_type: str | None = None
+
+
+@app.post("/finance/reconciliation-status")
+def update_finance_status(body: FinanceStatusRequest):
+    """Update only a matching exception and write an audit event."""
+    if body.status not in ("open", "resolved"):
+        raise HTTPException(400, "status must be open or resolved")
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM exceptions WHERE source_ref = ? ORDER BY id DESC LIMIT 1",
+                       (body.source_ref,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "Reconciliation record not found")
+    conn.execute(
+        "UPDATE exceptions SET status = ?, resolved_reason = ? WHERE id = ?",
+        (body.status, body.resolution_reason if body.status == "resolved" else None, row["id"]),
+    )
+    log_audit(conn, "ai_reconciliation_status_updated", {
+        "exception_id": row["id"], "source_ref": body.source_ref,
+        "status": body.status, "reason": body.resolution_reason,
+    }, tier="ai_tool")
+    conn.commit()
+    conn.close()
+    return {"status": body.status, "exception_id": row["id"], "source_ref": body.source_ref}
+
+
 @app.post("/exceptions/{exception_id}/resolve")
 def resolve_exception(exception_id: int, body: ResolveExceptionRequest):
     conn = get_conn()
