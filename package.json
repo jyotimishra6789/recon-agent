@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "dependencies": {
     "@ai-sdk/google": "^4.0.50",
     "ai": "^7.0.77",
