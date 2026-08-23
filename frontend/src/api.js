@@ -47,7 +47,7 @@ export const api = {
       const { value, done } = await reader.read();
       if (STREAM_URL === "/api/chat") {
         if (value) onEvent("text", { delta: decoder.decode(value, { stream: !done }) });
-        if (done) onEvent("done", { source: "claude" });
+        if (done) onEvent("done", { source: "gemini" });
         if (done) break;
         continue;
       }

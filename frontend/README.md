@@ -25,11 +25,11 @@ cd backend
 pip install -r requirements.txt
 python3 generate_data.py --count 60   # regenerate synthetic data (optional, already included)
 python3 load_data.py                   # loads CSVs into recon.db
-export ANTHROPIC_API_KEY=your_key_here # needed for Tier 2 LLM matching + the /qa chatbot
+export GOOGLE_API_KEY=your_key_here # needed for Tier 2 LLM matching + the /qa chatbot
 uvicorn main:app --reload --port 8000
 ```
 
-On Windows PowerShell, use `$env:ANTHROPIC_API_KEY="your_key_here"` instead.
+On Windows PowerShell, use `$env:GOOGLE_API_KEY="your_key_here"` instead.
 For persistent local configuration, copy `backend/.env.example` to
 `backend/.env`, replace the placeholder, install requirements again, and restart
 the backend. Never commit `backend/.env` or share its contents.
@@ -43,7 +43,7 @@ The project also has free, keyless operational endpoints:
 - `GET /stats/summary` — latest batch summary and open exception count
 - `POST /reconcile` — runs the complete reconciliation loop and returns measured runtime
 
-Anthropic is only needed for Tier 2 fuzzy matching and natural-language Q&A. The
+Google Gemini is only needed for Tier 2 fuzzy matching and natural-language Q&A. The
 deterministic reconciliation path works without an API key.
 
 ### 2. Frontend
@@ -62,10 +62,12 @@ Deploy `frontend` as the Vercel project root, or deploy this repository with the
 root `vercel.json`. The Vercel build serves the React frontend from
 `frontend/build`.
 
-Set this Vercel environment variable before deploying:
+Set these Vercel environment variables before deploying:
 
 ```text
 REACT_APP_API_URL=https://your-backend-host.example.com
+GOOGLE_GENERATIVE_AI_API_KEY=your_google_ai_key
+RECON_BACKEND_URL=https://your-backend-host.example.com
 ```
 
 The backend is a FastAPI process with SQLite-backed local state, so it should run

@@ -65,7 +65,7 @@ export default function ChatbotQA() {
       <div className="chat-messages">
         {messages.map((m, i) => (
           <div className={`chat-msg ${m.role}`} key={i}>
-            <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+            <div style={{ whiteSpace: "pre-wrap" }}>{m.structured ? "" : m.text}</div>
             {m.structured && <div className="ai-structured">
               <strong>{m.structured.answer}</strong>
               <span>Confidence: {m.structured.confidence_score ?? "N/A"}</span>

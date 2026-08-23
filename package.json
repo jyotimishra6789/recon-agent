@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.41",
+    "@ai-sdk/google": "^4.0.50",
     "ai": "^7.0.77",
     "zod": "^4.4.3"
   }

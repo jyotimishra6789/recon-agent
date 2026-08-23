@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from anthropic import Anthropic
+from google import genai
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -412,7 +412,7 @@ def stress_test(body: StressTestRequest):
 
 
 # ---------------------------------------------------------------------
-# NL Q&A chatbot - Claude translates question -> SQL -> answer
+# NL Q&A chatbot - Gemini translates question -> SQL -> answer
 # ---------------------------------------------------------------------
 QA_SYSTEM_PROMPT = """You are a SQL assistant for a financial reconciliation database.
 Schema:
@@ -449,16 +449,16 @@ class ReceiptRequest(BaseModel):
 
 
 def classify_receipt(filename: str, receipt_text: str):
-    """Classify receipt metadata with Claude, falling back to safe heuristics."""
-    if os.getenv("ANTHROPIC_API_KEY"):
+    """Classify receipt metadata with Gemini, falling back to safe heuristics."""
+    if os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"):
         try:
-            client = Anthropic()
-            response = client.messages.create(
-                model="claude-sonnet-4-6", max_tokens=120,
-                system='Return only JSON: {"is_expense": true, "category": "string", "merchant": "string", "amount": number, "receipt_date": "YYYY-MM-DD"}. Use null for unknown values.',
-                messages=[{"role": "user", "content": f"Filename: {filename}\nReceipt text: {receipt_text[:12000]}"}],
+            client = genai.Client(api_key=os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"))
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents='Return only JSON with keys is_expense, category, merchant, amount, receipt_date. Use null for unknown values.\n'
+                f"Filename: {filename}\nReceipt text: {receipt_text[:12000]}",
             )
-            text = response.content[0].text.replace("```json", "").replace("```", "").strip()
+            text = response.text.replace("```json", "").replace("```", "").strip()
             result = json.loads(text)
             if isinstance(result.get("is_expense"), bool):
                 return result
@@ -722,25 +722,57 @@ def qa_stream(body: QARequest):
         yield sse("context", {"items": context, "reranked": True})
         local_answer = run_local_qa(question)
         if local_answer:
-            answer = local_answer.get("explanation", "")
+            structured = {
+                "answer": local_answer.get("explanation", ""),
+                "matched_transaction": None, "confidence_score": None,
+                "reason": "Answered from the local reconciliation database.",
+                "exception_type": "none", "human_review_required": False,
+                "guardrail_reasons": [],
+            }
             source = "local"
-        elif not os.getenv("ANTHROPIC_API_KEY"):
-            answer = "Configure ANTHROPIC_API_KEY for free-form finance questions."
+        elif not os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"):
+            structured = {
+                "answer": "Configure GOOGLE_GENERATIVE_AI_API_KEY for free-form finance questions.",
+                "matched_transaction": None, "confidence_score": None,
+                "reason": "Gemini is not configured.", "exception_type": "none",
+                "human_review_required": False, "guardrail_reasons": [],
+            }
             source = "local"
         else:
             try:
-                client = Anthropic()
-                response = client.messages.create(
-                    model="claude-sonnet-4-6", max_tokens=300,
-                    system=QA_SYSTEM_PROMPT + "\nRetrieved context:\n" + json.dumps(context),
-                    messages=[{"role": "user", "content": question}],
+                client = genai.Client(api_key=os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"))
+                response = client.models.generate_content(
+                    model="gemini-3.6-flash",
+                    contents=QA_SYSTEM_PROMPT + "\nRetrieved context:\n" + json.dumps(context) + "\nQuestion: " + question,
                 )
-                answer = response.content[0].text.strip()
-                source = "claude"
+                text = response.text.strip().replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(text)
+                if parsed.get("sql") and parsed["sql"].lower().startswith("select"):
+                    conn = get_conn()
+                    rows = [dict(row) for row in conn.execute(parsed["sql"]).fetchall()]
+                    conn.close()
+                    answer = parsed.get("explanation", "Here is the result.")
+                    if rows:
+                        answer += " " + "; ".join(", ".join(f"{key}: {value}" for key, value in row.items()) for row in rows[:5])
+                else:
+                    answer = parsed.get("explanation", "I cannot answer that from this data.")
+                structured = {
+                    "answer": answer, "matched_transaction": None,
+                    "confidence_score": None, "reason": "Retrieved from the reconciliation database.",
+                    "exception_type": "none", "human_review_required": False,
+                    "guardrail_reasons": [],
+                }
+                source = "gemini"
             except Exception:
-                answer = "The AI provider is unavailable. Try a suggested question instead."
+                structured = {
+                    "answer": "Gemini could not produce a valid read-only answer. Try a suggested question instead.",
+                    "matched_transaction": None, "confidence_score": None,
+                    "reason": "The AI response failed validation.", "exception_type": "unresolved",
+                    "human_review_required": True, "guardrail_reasons": ["AI response validation failed"],
+                }
                 source = "local"
         yield sse("tool_call", {"name": tool, "status": "completed"})
+        answer = json.dumps(structured)
         for token in answer.split(" "):
             yield sse("text", {"delta": token + " "})
         yield sse("done", {"source": source, "structured": True})
@@ -796,20 +828,18 @@ def qa(body: QARequest):
     if local_answer:
         return local_answer
 
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"):
         return {
-            "answer": "This question needs the optional AI provider. Try one of the suggested questions, or configure ANTHROPIC_API_KEY for free-form queries.",
+            "answer": "This question needs the optional AI provider. Try one of the suggested questions, or configure GOOGLE_GENERATIVE_AI_API_KEY for free-form queries.",
             "sql": None,
             "source": "local",
         }
 
     try:
-        client = Anthropic()
-        resp = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=300,
-            system=QA_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": body.question}],
+        client = genai.Client(api_key=os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"))
+        resp = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=QA_SYSTEM_PROMPT + "\nQuestion: " + body.question,
         )
     except Exception:
         return {
@@ -817,7 +847,7 @@ def qa(body: QARequest):
             "sql": None,
             "source": "local",
         }
-    text = resp.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+    text = resp.text.strip().replace("```json", "").replace("```", "").strip()
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:

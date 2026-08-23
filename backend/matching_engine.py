@@ -15,7 +15,7 @@ import json
 import os
 import time
 from datetime import datetime, date
-from anthropic import Anthropic
+from google import genai
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "recon.db")
 DATE_WINDOW_DAYS = 3          # how far apart dates can be and still be "near"
@@ -248,7 +248,7 @@ Never invent a match you are not reasonably confident about.
 
 
 def call_llm_for_match(bank_row, candidates):
-    client = Anthropic()
+    client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
     candidate_desc = "\n".join(
         f"[{i}] amount=₹{c['amount']}, date={c.get('invoice_date') or c.get('settle_date')}, "
         f"id={c.get('invoice_id') or c.get('order_id')}"
@@ -258,13 +258,11 @@ def call_llm_for_match(bank_row, candidates):
         f"Bank transaction: amount=₹{bank_row['amount']}, date={bank_row['txn_date']}, "
         f"ref={bank_row['ref_id']}\n\nCandidates:\n{candidate_desc}"
     )
-    resp = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=200,
-        system=TIER2_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
+    resp = client.models.generate_content(
+        model="gemini-3.6-flash",
+        contents=TIER2_SYSTEM_PROMPT + "\n" + user_prompt,
     )
-    text = resp.content[0].text.strip()
+    text = resp.text.strip()
     text = text.replace("```json", "").replace("```", "").strip()
     try:
         return json.loads(text)
