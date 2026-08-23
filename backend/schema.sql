@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS exceptions;
 DROP TABLE IF EXISTS audit_log;
 DROP TABLE IF EXISTS exception_patterns;
 DROP TABLE IF EXISTS receipt_memory;
+DROP TABLE IF EXISTS finance_policies;
 
 -- Source 1: Bank statement (raw bank feed)
 CREATE TABLE bank_txns (
@@ -112,3 +113,15 @@ CREATE TABLE receipt_memory (
     context TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE finance_policies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    policy_name TEXT NOT NULL UNIQUE,
+    policy_text TEXT NOT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO finance_policies (policy_name, policy_text) VALUES
+('match_tolerance', 'Exact amount matches allow a tolerance of 0.01 rupees and a date window of 3 days.'),
+('exception_review', 'Unresolved amount mismatches require human review before reconciliation status is resolved.'),
+('audit_requirement', 'Every automated reconciliation status change must include a reason and an audit event.');

@@ -14,6 +14,7 @@ Endpoints:
 import sqlite3
 import json
 import os
+import re
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -360,6 +361,57 @@ def ensure_ai_tables(conn):
         merchant TEXT NOT NULL, amount REAL NOT NULL, receipt_date TEXT NOT NULL,
         category TEXT, status TEXT DEFAULT 'queued', context TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS finance_policies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, policy_name TEXT NOT NULL UNIQUE,
+        policy_text TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    policies = (
+        ("match_tolerance", "Exact amount matches allow a tolerance of 0.01 rupees and a date window of 3 days."),
+        ("exception_review", "Unresolved amount mismatches require human review before reconciliation status is resolved."),
+        ("audit_requirement", "Every automated reconciliation status change must include a reason and an audit event."),
+    )
+    conn.executemany("INSERT OR IGNORE INTO finance_policies (policy_name, policy_text) VALUES (?, ?)", policies)
+
+
+@app.get("/finance/search")
+def finance_search(q: str, limit: int = 8):
+    """Search finance records and rerank candidates before returning context."""
+    query = q.strip()
+    if not query or len(query) > 500:
+        raise HTTPException(400, "Search query must be between 1 and 500 characters")
+    limit = max(1, min(limit, 20))
+    terms = [term for term in re.findall(r"[a-z0-9_]+", query.lower()) if len(term) > 1]
+    conn = get_conn()
+    ensure_ai_tables(conn)
+    candidates = []
+
+    def add_records(record_type, rows, fields):
+        for row in rows:
+            item = dict(row)
+            haystack = " ".join(str(item.get(field, "")) for field in fields).lower()
+            exact_hits = sum(haystack.count(term) for term in terms)
+            field_hits = sum(any(term in str(item.get(field, "")).lower() for term in terms) for field in fields)
+            if exact_hits or field_hits:
+                item["record_type"] = record_type
+                item["relevance"] = round(exact_hits * 2 + field_hits, 3)
+                candidates.append(item)
+
+    add_records("invoice", conn.execute("SELECT * FROM ledger_txns").fetchall(),
+                ("invoice_id", "customer_name", "amount", "invoice_date"))
+    add_records("bank_transaction", conn.execute("SELECT * FROM bank_txns").fetchall(),
+                ("ref_id", "description", "amount", "txn_date"))
+    add_records("settlement", conn.execute("SELECT * FROM settlement_txns").fetchall(),
+                ("order_id", "amount", "gross_amount", "settle_date"))
+    add_records("match", conn.execute("SELECT * FROM matches").fetchall(),
+                ("bank_ref_id", "order_id", "invoice_id", "reason", "match_type"))
+    add_records("exception", conn.execute("SELECT * FROM exceptions").fetchall(),
+                ("source_ref", "exception_reason", "resolved_reason", "status"))
+    add_records("learned_pattern", conn.execute("SELECT * FROM exception_patterns").fetchall(),
+                ("pattern_type", "resolution_reason", "trust_score"))
+    add_records("policy", conn.execute("SELECT * FROM finance_policies").fetchall(),
+                ("policy_name", "policy_text"))
+    conn.close()
+    candidates.sort(key=lambda item: (item["relevance"], item.get("created_at", item.get("updated_at", ""))), reverse=True)
+    return {"query": query, "results": candidates[:limit], "reranked": True}
 
 
 def retrieve_finance_context(question: str):

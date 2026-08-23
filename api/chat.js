@@ -31,26 +31,31 @@ const reconciliationResponseSchema = z.object({
 });
 
 const financeContext = tool({
-  description: "Retrieve current reconciliation summary and open exceptions.",
+  description: "Retrieve current reconciliation summary and the highest-ranked finance records.",
   inputSchema: z.object({
     focus: z.string().describe("The finance topic to investigate"),
   }),
   execute: async ({ focus }) => {
-    const [summaryResponse, exceptionsResponse] = await Promise.all([
-      fetch(`${backendUrl}/stats/summary`),
-      fetch(`${backendUrl}/exceptions?status=open`),
+    const [summary, search] = await Promise.all([
+      financeRequest("/stats/summary"),
+      financeRequest(`/finance/search?q=${encodeURIComponent(focus)}&limit=8`),
     ]);
-    if (!summaryResponse.ok || !exceptionsResponse.ok) {
-      throw new Error("Reconciliation service is unavailable");
-    }
-    const summary = await summaryResponse.json();
-    const exceptions = await exceptionsResponse.json();
     return {
       focus,
       summary,
-      open_exceptions: exceptions.slice(0, 10),
+      retrieved_records: search.results,
+      reranked: search.reranked,
     };
   },
+});
+
+const searchFinanceRecords = tool({
+  description: "Search invoices, bank transactions, settlements, matches, exceptions, learned patterns, and finance policies. Results are reranked by relevance.",
+  inputSchema: z.object({
+    query: z.string().min(2),
+    limit: z.number().int().min(1).max(20).default(8),
+  }),
+  execute: ({ query, limit }) => financeRequest(`/finance/search?q=${encodeURIComponent(query)}&limit=${limit}`),
 });
 
 const fetchTransaction = tool({
@@ -112,10 +117,11 @@ export default async function handler(request) {
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-6"),
-    system: "You are a concise financial reconciliation analyst. Return every field in the required schema. Use null for matched_transaction and confidence_score when the question is not about one transaction. Never invent amounts. For transaction investigations, follow this sequence: fetchTransaction, checkInvoice, compareAmount, then updateReconciliationStatus only when the user explicitly requests a status update and the comparison supports it. Do not update records for a read-only question.",
+    system: "You are a concise financial reconciliation analyst. Return every field in the required schema. Use null for matched_transaction and confidence_score when the question is not about one transaction. Never invent amounts. Start broad questions with searchFinanceRecords to retrieve and rerank relevant invoices, transactions, previous matches, exceptions, learned patterns, and policies. For transaction investigations, follow this sequence: fetchTransaction, checkInvoice, compareAmount, then updateReconciliationStatus only when the user explicitly requests a status update and the comparison supports it. Do not update records for a read-only question.",
     messages: [{ role: "user", content: question }],
     tools: {
       financeContext,
+      searchFinanceRecords,
       fetchTransaction,
       checkInvoice,
       compareAmount,
