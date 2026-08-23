@@ -88,8 +88,21 @@ def process_pending_receipts():
     return {"processed": promoted, "reconciliation": last_reconcile_result if promoted else None}
 
 
+def initialize_database_if_needed():
+    """Initialize a fresh Render instance from the bundled demo source files."""
+    conn = get_conn()
+    table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'bank_txns'"
+    ).fetchone()
+    conn.close()
+    if not table:
+        from load_data import load
+        load()
+
+
 @app.on_event("startup")
 def start_receipt_scheduler():
+    initialize_database_if_needed()
     if not scheduler.running:
         scheduler.add_job(process_pending_receipts, "interval", seconds=60,
                           id="receipt-worker", replace_existing=True)
