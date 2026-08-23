@@ -3,6 +3,7 @@ import { Output, streamText, tool } from "ai";
 import { z } from "zod";
 
 const backendUrl = process.env.RECON_BACKEND_URL || "http://127.0.0.1:8000";
+const geminiModel = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 async function financeRequest(path, options) {
   const response = await fetch(`${backendUrl}${path}`, options);
@@ -140,7 +141,7 @@ export default async function handler(request) {
   }
 
   const result = streamText({
-    model: google("gemini-3.6-flash"),
+    model: google(geminiModel),
     system: `You are a concise financial reconciliation analyst. Return every field in the required schema. Use null for matched_transaction and confidence_score when the question is not about one transaction. Never invent amounts. Use the curated finance context below; it has already been filtered, reranked, deduplicated, summarized, and limited to a strict budget. Use searchFinanceRecords or searchMemory only when the curated context is insufficient. Treat prior memories as guidance, not proof. For transaction investigations, follow this sequence: fetchTransaction, checkInvoice, compareAmount, then updateReconciliationStatus only when the user explicitly requests a status update and the comparison supports it. Do not update records for a read-only question.
 
   CURATED FINANCE CONTEXT:
@@ -157,9 +158,7 @@ export default async function handler(request) {
     },
     toolChoice: "auto",
     output: Output.object({ schema: reconciliationResponseSchema }),
-    providerOptions: {
-      google: { thinkingConfig: { thinkingBudget: 1024 } },
-    },
+    onError: ({ error }) => console.error("Gemini stream error:", error),
     maxOutputTokens: 1600,
   });
 
