@@ -16,6 +16,7 @@ import json
 import os
 import re
 import uuid
+import threading
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
@@ -50,6 +51,7 @@ AI_HIGH_VALUE_THRESHOLD = 10000.0
 AI_MIN_APPROVAL_CONFIDENCE = 90.0
 AI_SUSPICIOUS_EXCEPTIONS = {"duplicate", "amount_mismatch_unexplained", "missing_counterpart", "unresolved"}
 last_reconcile_result = None
+reconciliation_lock = threading.Lock()
 
 
 def process_pending_receipts():
@@ -84,7 +86,8 @@ def process_pending_receipts():
     conn.commit()
     conn.close()
     if promoted:
-        last_reconcile_result = run_reconciliation()
+        with reconciliation_lock:
+            last_reconcile_result = run_reconciliation()
     return {"processed": promoted, "reconciliation": last_reconcile_result if promoted else None}
 
 
@@ -128,7 +131,11 @@ def health():
 @app.post("/reconcile")
 def reconcile():
     global last_reconcile_result
-    result = run_reconciliation()
+    try:
+        with reconciliation_lock:
+            result = run_reconciliation()
+    except sqlite3.Error as error:
+        raise HTTPException(503, f"Reconciliation database is temporarily busy: {error}")
     last_reconcile_result = result
     return result
 
