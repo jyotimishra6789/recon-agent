@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { api } from "../api";
 
-export default function ReceiptUpload() {
+export default function ReceiptUpload({ onProcessed }) {
   const [file, setFile] = useState(null);
   const [amount, setAmount] = useState("");
   const [receiptDate, setReceiptDate] = useState("");
@@ -17,6 +17,9 @@ export default function ReceiptUpload() {
       const result = await api.uploadReceipt(file, amount, receiptDate);
       setStatus(result.status === "queued" ? "Queued for reconciliation" : "Not classified as an expense");
       setFile(null);
+      setAmount("");
+      setReceiptDate("");
+      onProcessed?.();
       event.target.reset();
     } catch (error) {
       setStatus(`Upload failed: ${error.message}`);

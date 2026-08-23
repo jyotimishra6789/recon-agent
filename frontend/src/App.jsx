@@ -106,7 +106,7 @@ export default function App() {
         onSignOff={handleSignOff}
       />
 
-      <ReceiptUpload />
+      <ReceiptUpload onProcessed={refreshAll} />
 
       <div className="two-col">
         <div>

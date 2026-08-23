@@ -36,17 +36,26 @@ const financeContext = tool({
     focus: z.string().describe("The finance topic to investigate"),
   }),
   execute: async ({ focus }) => {
-    const [summary, search] = await Promise.all([
+    const [summary, search, memories] = await Promise.all([
       financeRequest("/stats/summary"),
       financeRequest(`/finance/search?q=${encodeURIComponent(focus)}&limit=8`),
+      financeRequest(`/memory/search?query=${encodeURIComponent(focus)}&limit=5`),
     ]);
     return {
       focus,
       summary,
       retrieved_records: search.results,
       reranked: search.reranked,
+      previous_handling: memories.results,
+      memory_provider: memories.provider,
     };
   },
+});
+
+const searchMemory = tool({
+  description: "Find how similar vendors, receipts, or exceptions were handled in previous reconciliations.",
+  inputSchema: z.object({ query: z.string().min(2), limit: z.number().int().min(1).max(10).default(5) }),
+  execute: ({ query, limit }) => financeRequest(`/memory/search?query=${encodeURIComponent(query)}&limit=${limit}`),
 });
 
 const searchFinanceRecords = tool({
@@ -117,11 +126,12 @@ export default async function handler(request) {
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-6"),
-    system: "You are a concise financial reconciliation analyst. Return every field in the required schema. Use null for matched_transaction and confidence_score when the question is not about one transaction. Never invent amounts. Start broad questions with searchFinanceRecords to retrieve and rerank relevant invoices, transactions, previous matches, exceptions, learned patterns, and policies. For transaction investigations, follow this sequence: fetchTransaction, checkInvoice, compareAmount, then updateReconciliationStatus only when the user explicitly requests a status update and the comparison supports it. Do not update records for a read-only question.",
+    system: "You are a concise financial reconciliation analyst. Return every field in the required schema. Use null for matched_transaction and confidence_score when the question is not about one transaction. Never invent amounts. Start broad questions with searchFinanceRecords and searchMemory to retrieve and rerank relevant records and previous vendor handling. Treat prior memories as guidance, not proof. For transaction investigations, follow this sequence: fetchTransaction, checkInvoice, compareAmount, then updateReconciliationStatus only when the user explicitly requests a status update and the comparison supports it. Do not update records for a read-only question.",
     messages: [{ role: "user", content: question }],
     tools: {
       financeContext,
       searchFinanceRecords,
+      searchMemory,
       fetchTransaction,
       checkInvoice,
       compareAmount,

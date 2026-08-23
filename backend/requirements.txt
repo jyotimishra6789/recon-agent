@@ -4,6 +4,7 @@ anthropic
 python-dotenv
 python-multipart
 apscheduler
+mem0ai
 pydantic
 pytest
 pytest-cov

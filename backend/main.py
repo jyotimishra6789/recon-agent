@@ -25,6 +25,11 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 
+try:
+    from mem0 import MemoryClient
+except ImportError:
+    MemoryClient = None
+
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from matching_engine import run_reconciliation, get_conn, log_audit
@@ -67,6 +72,11 @@ def process_pending_receipts():
             "receipt_ref": row["receipt_ref"], "invoice_id": invoice_id,
             "merchant": row["merchant"], "amount": row["amount"],
         }, tier="receipt_worker")
+        remember_finance_context(
+            f"Receipt vendor {row['merchant']} was classified as an expense for {row['amount']} and added as {invoice_id}.",
+            {"vendor": row["merchant"], "receipt_ref": row["receipt_ref"], "invoice_id": invoice_id},
+            "receipt",
+        )
         promoted += 1
     conn.commit()
     conn.close()
@@ -275,6 +285,11 @@ def resolve_exception(exception_id: int, body: ResolveExceptionRequest):
                "pattern_type": body.pattern_type})
     conn.commit()
     conn.close()
+    remember_finance_context(
+        f"Exception {exception_id} for {row['source_ref']} was resolved as: {body.resolution_reason}.",
+        {"vendor": row["source_ref"], "exception_id": exception_id, "pattern_type": body.pattern_type},
+        "exception_resolution",
+    )
     return {"status": "resolved", "exception_id": exception_id}
 
 
@@ -438,6 +453,51 @@ def ensure_ai_tables(conn):
         ("audit_requirement", "Every automated reconciliation status change must include a reason and an audit event."),
     )
     conn.executemany("INSERT OR IGNORE INTO finance_policies (policy_name, policy_text) VALUES (?, ?)", policies)
+    conn.execute("""CREATE TABLE IF NOT EXISTS finance_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, vendor TEXT,
+        memory_type TEXT NOT NULL, metadata TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+
+
+def remember_finance_context(content: str, metadata: dict, memory_type: str):
+    """Write to Mem0 when configured and always retain a local fallback."""
+    if MemoryClient and os.getenv("MEM0_API_KEY"):
+        try:
+            client = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
+            client.add([{"role": "user", "content": content}], user_id="recon-agent", metadata=metadata)
+        except Exception:
+            pass
+    conn = get_conn()
+    ensure_ai_tables(conn)
+    conn.execute("INSERT INTO finance_memory (content, vendor, memory_type, metadata) VALUES (?, ?, ?, ?)",
+                 (content, metadata.get("vendor"), memory_type, json.dumps(metadata, default=str)))
+    conn.commit()
+    conn.close()
+
+
+def search_finance_memory(query: str, limit: int = 5):
+    if MemoryClient and os.getenv("MEM0_API_KEY"):
+        try:
+            client = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
+            return {"provider": "mem0", "results": client.search(query, user_id="recon-agent", limit=limit)}
+        except Exception:
+            pass
+    terms = [term for term in re.findall(r"[a-z0-9_]+", query.lower()) if len(term) > 1]
+    conn = get_conn()
+    ensure_ai_tables(conn)
+    rows = [dict(row) for row in conn.execute("SELECT * FROM finance_memory ORDER BY created_at DESC LIMIT 200").fetchall()]
+    conn.close()
+    for row in rows:
+        row["relevance"] = sum(row["content"].lower().count(term) * 2 for term in terms)
+        row["metadata"] = json.loads(row["metadata"] or "{}")
+    rows = [row for row in rows if row["relevance"] > 0]
+    rows.sort(key=lambda row: (row["relevance"], row["created_at"]), reverse=True)
+    return {"provider": "local", "results": rows[:limit]}
+
+
+@app.get("/memory/search")
+def memory_search(query: str, limit: int = 5):
+    return search_finance_memory(query, max(1, min(limit, 20)))
 
 
 @app.get("/finance/search")
