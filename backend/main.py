@@ -16,9 +16,13 @@ import json
 import os
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from anthropic import Anthropic
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from matching_engine import run_reconciliation, get_conn, log_audit
 
@@ -256,6 +260,113 @@ Rules:
 
 class QARequest(BaseModel):
     question: str
+
+
+class ReceiptRequest(BaseModel):
+    receipt_ref: str
+    merchant: str
+    amount: float
+    receipt_date: str
+    category: str | None = None
+
+
+def ensure_ai_tables(conn):
+    """Keep databases created before the AI workflow compatible."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS receipt_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_ref TEXT NOT NULL UNIQUE,
+        merchant TEXT NOT NULL, amount REAL NOT NULL, receipt_date TEXT NOT NULL,
+        category TEXT, status TEXT DEFAULT 'queued', context TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+
+
+def retrieve_finance_context(question: str):
+    """Retrieve and deterministically rerank a small context window."""
+    conn = get_conn()
+    ensure_ai_tables(conn)
+    if any(word in question.lower() for word in ("receipt", "expense", "merchant")):
+        rows = [dict(row) for row in conn.execute(
+            "SELECT merchant, amount, category, status FROM receipt_memory "
+            "ORDER BY created_at DESC LIMIT 5").fetchall()]
+    else:
+        rows = [dict(row) for row in conn.execute(
+            "SELECT exception_reason, COUNT(*) AS count, ROUND(SUM(amount), 2) AS amount "
+            "FROM exceptions WHERE status = 'open' GROUP BY exception_reason "
+            "ORDER BY count DESC LIMIT 5").fetchall()]
+    conn.close()
+    terms = set(question.lower().split())
+    return sorted(rows, key=lambda row: sum(term in str(row).lower() for term in terms), reverse=True)[:5]
+
+
+def select_finance_tool(question: str):
+    normalized = question.lower()
+    if "receipt" in normalized or "expense" in normalized:
+        return "search_receipt_memory"
+    if "exception" in normalized or "unresolved" in normalized:
+        return "get_open_exceptions"
+    return "get_reconciliation_summary"
+
+
+def sse(event: str, payload: dict):
+    return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
+@app.post("/receipts/process")
+def process_receipt(body: ReceiptRequest):
+    """Idempotent receipt ingestion; suitable for cron or a queue worker."""
+    conn = get_conn()
+    ensure_ai_tables(conn)
+    context = f"{body.merchant} expense {body.category or 'uncategorized'}"
+    conn.execute("""INSERT INTO receipt_memory
+        (receipt_ref, merchant, amount, receipt_date, category, status, context)
+        VALUES (?, ?, ?, ?, ?, 'queued', ?) ON CONFLICT(receipt_ref) DO UPDATE SET
+        status='queued', context=excluded.context""",
+        (body.receipt_ref, body.merchant, body.amount, body.receipt_date, body.category, context))
+    conn.commit()
+    row = conn.execute("SELECT * FROM receipt_memory WHERE receipt_ref = ?", (body.receipt_ref,)).fetchone()
+    conn.close()
+    return {"status": "queued", "receipt": dict(row), "next_step": "reconcile"}
+
+
+@app.post("/qa/stream")
+def qa_stream(body: QARequest):
+    """AI SDK-friendly stream with reasoning, tools, retrieval and text."""
+    question = body.question.strip()
+    if not question or len(question) > 500:
+        raise HTTPException(400, "Question must be between 1 and 500 characters")
+
+    def generate():
+        tool = select_finance_tool(question)
+        yield sse("reasoning", {"text": "Classifying the finance question"})
+        yield sse("tool_call", {"name": tool, "status": "started"})
+        context = retrieve_finance_context(question)
+        yield sse("context", {"items": context, "reranked": True})
+        local_answer = run_local_qa(question)
+        if local_answer:
+            answer = local_answer.get("explanation", "")
+            source = "local"
+        elif not os.getenv("ANTHROPIC_API_KEY"):
+            answer = "Configure ANTHROPIC_API_KEY for free-form finance questions."
+            source = "local"
+        else:
+            try:
+                client = Anthropic()
+                response = client.messages.create(
+                    model="claude-sonnet-4-6", max_tokens=300,
+                    system=QA_SYSTEM_PROMPT + "\nRetrieved context:\n" + json.dumps(context),
+                    messages=[{"role": "user", "content": question}],
+                )
+                answer = response.content[0].text.strip()
+                source = "claude"
+            except Exception:
+                answer = "The AI provider is unavailable. Try a suggested question instead."
+                source = "local"
+        yield sse("tool_call", {"name": tool, "status": "completed"})
+        for token in answer.split(" "):
+            yield sse("text", {"delta": token + " "})
+        yield sse("done", {"source": source, "structured": True})
+
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache"})
 
 
 def run_local_qa(question: str):

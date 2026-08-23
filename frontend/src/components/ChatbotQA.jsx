@@ -26,25 +26,29 @@ export default function ChatbotQA() {
     setMessages((m) => [...m, { role: "user", text: q }]);
     setInput("");
     setBusy(true);
+    setMessages((m) => [...m, { role: "bot", text: "", status: "Thinking..." }]);
     try {
-      const res = await api.askQuestion(q);
-      let text;
-      if (res.result) {
-        text = res.explanation || "Here's what I found:";
-        if (Array.isArray(res.result) && res.result.length > 0) {
-          const preview = res.result.slice(0, 5)
-            .map((row) => Object.values(row).join(" · "))
-            .join("\n");
-          text += `\n\n${preview}`;
-        } else {
-          text += "\n\nNo matching rows.";
+      await api.askQuestionStream(q, (event, payload) => {
+        if (event === "reasoning") {
+          setMessages((m) => m.map((message, index) => index === m.length - 1
+            ? { ...message, status: payload.text } : message));
         }
-      } else {
-        text = res.answer || "Couldn't find an answer for that.";
-      }
-      setMessages((m) => [...m, { role: "bot", text, sql: res.sql }]);
+        if (event === "tool_call" && payload.status === "started") {
+          setMessages((m) => m.map((message, index) => index === m.length - 1
+            ? { ...message, status: `Using ${payload.name}...` } : message));
+        }
+        if (event === "text") {
+          setMessages((m) => m.map((message, index) => index === m.length - 1
+            ? { ...message, text: message.text + payload.delta, status: null } : message));
+        }
+        if (event === "done") {
+          setMessages((m) => m.map((message, index) => index === m.length - 1
+            ? { ...message, status: null } : message));
+        }
+      });
     } catch (e) {
-      setMessages((m) => [...m, { role: "bot", text: `Error: ${e.message}` }]);
+      setMessages((m) => m.map((message, index) => index === m.length - 1
+        ? { ...message, text: `Error: ${e.message}`, status: null } : message));
     } finally {
       setBusy(false);
     }
@@ -56,6 +60,7 @@ export default function ChatbotQA() {
         {messages.map((m, i) => (
           <div className={`chat-msg ${m.role}`} key={i}>
             <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+            {m.status && <div className="chat-status">{m.status}</div>}
             {m.sql && <div className="sql-line">{m.sql}</div>}
           </div>
         ))}

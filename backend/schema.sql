@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS match_members;
 DROP TABLE IF EXISTS exceptions;
 DROP TABLE IF EXISTS audit_log;
 DROP TABLE IF EXISTS exception_patterns;
+DROP TABLE IF EXISTS receipt_memory;
 
 -- Source 1: Bank statement (raw bank feed)
 CREATE TABLE bank_txns (
@@ -97,5 +98,17 @@ CREATE TABLE exception_patterns (
     resolution_reason TEXT NOT NULL,
     times_seen INTEGER DEFAULT 1,
     trust_score REAL DEFAULT 50,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE receipt_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_ref TEXT NOT NULL UNIQUE,
+    merchant TEXT NOT NULL,
+    amount REAL NOT NULL,
+    receipt_date TEXT NOT NULL,
+    category TEXT,
+    status TEXT DEFAULT 'queued',
+    context TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );

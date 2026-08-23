@@ -280,6 +280,7 @@ tbody tr:hover { background: #f7fbf8; }
 .chat-msg { max-width: 92%; padding: 11px 12px; border-radius: 8px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
 .chat-msg.bot { align-self: flex-start; border: 1px solid var(--line); background: white; }
 .chat-msg.user { align-self: flex-end; background: var(--teal); color: white; }
+.chat-status { margin-top: 6px; color: var(--muted); font-size: 10px; font-style: italic; }
 .sql-line { margin-top: 9px; overflow: auto; color: var(--muted); font-size: 10px; }
 .chat-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; border-top: 1px solid var(--line); }
 .chat-suggestion { padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--ink-soft); cursor: pointer; font-size: 10px; font-weight: 700; }

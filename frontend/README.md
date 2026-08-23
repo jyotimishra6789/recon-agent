@@ -29,6 +29,11 @@ export ANTHROPIC_API_KEY=your_key_here # needed for Tier 2 LLM matching + the /q
 uvicorn main:app --reload --port 8000
 ```
 
+On Windows PowerShell, use `$env:ANTHROPIC_API_KEY="your_key_here"` instead.
+For persistent local configuration, copy `backend/.env.example` to
+`backend/.env`, replace the placeholder, install requirements again, and restart
+the backend. Never commit `backend/.env` or share its contents.
+
 Backend now runs at `http://localhost:8000`. Check `http://localhost:8000/docs`
 for the interactive API explorer (FastAPI auto-generates this).
 
