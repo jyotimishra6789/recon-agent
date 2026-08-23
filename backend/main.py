@@ -46,6 +46,9 @@ app.add_middleware(
 
 # ---- assumption used for the business-impact calculator ----
 MANUAL_MINUTES_PER_RECORD = 2.5  # industry-rough estimate for manual recon per line item
+AI_HIGH_VALUE_THRESHOLD = 10000.0
+AI_MIN_APPROVAL_CONFIDENCE = 90.0
+AI_SUSPICIOUS_EXCEPTIONS = {"duplicate", "amount_mismatch_unexplained", "missing_counterpart", "unresolved"}
 last_reconcile_result = None
 
 
@@ -221,6 +224,28 @@ class FinanceStatusRequest(BaseModel):
     status: str
     resolution_reason: str
     pattern_type: str | None = None
+    transaction_amount: float | None = None
+    invoice_amount: float | None = None
+    confidence_score: float | None = None
+    exception_type: str | None = None
+
+
+def evaluate_ai_decision(body: FinanceStatusRequest, exception):
+    """Return blocking reasons before an AI-originated status mutation."""
+    reasons = []
+    amounts = [value for value in (body.transaction_amount, body.invoice_amount,
+                                   exception["amount"]) if value is not None]
+    amount = max(amounts, default=0)
+    if body.status == "resolved" and amount > AI_HIGH_VALUE_THRESHOLD:
+        reasons.append(f"amount exceeds {AI_HIGH_VALUE_THRESHOLD:.0f}")
+    if body.status == "resolved" and body.confidence_score is not None and body.confidence_score < AI_MIN_APPROVAL_CONFIDENCE:
+        reasons.append(f"confidence is below {AI_MIN_APPROVAL_CONFIDENCE:.0f}")
+    if body.status == "resolved" and body.exception_type in AI_SUSPICIOUS_EXCEPTIONS:
+        reasons.append(f"exception type is {body.exception_type}")
+    if body.status == "resolved" and body.transaction_amount is not None and body.invoice_amount is not None:
+        if abs(body.transaction_amount - body.invoice_amount) > 0.01:
+            reasons.append("transaction and invoice amounts do not match")
+    return reasons
 
 
 @app.post("/finance/reconciliation-status")
@@ -234,6 +259,18 @@ def update_finance_status(body: FinanceStatusRequest):
     if not row:
         conn.close()
         raise HTTPException(404, "Reconciliation record not found")
+    guardrail_reasons = evaluate_ai_decision(body, row)
+    if guardrail_reasons:
+        log_audit(conn, "ai_status_blocked_by_guardrail", {
+            "source_ref": body.source_ref, "requested_status": body.status,
+            "reasons": guardrail_reasons,
+        }, tier="ai_guardrail")
+        conn.commit()
+        conn.close()
+        return {
+            "status": "review_required", "source_ref": body.source_ref,
+            "human_review_required": True, "guardrail_reasons": guardrail_reasons,
+        }
     conn.execute(
         "UPDATE exceptions SET status = ?, resolved_reason = ? WHERE id = ?",
         (body.status, body.resolution_reason if body.status == "resolved" else None, row["id"]),
@@ -451,6 +488,7 @@ def ensure_ai_tables(conn):
         ("match_tolerance", "Exact amount matches allow a tolerance of 0.01 rupees and a date window of 3 days."),
         ("exception_review", "Unresolved amount mismatches require human review before reconciliation status is resolved."),
         ("audit_requirement", "Every automated reconciliation status change must include a reason and an audit event."),
+        ("ai_guardrails", "AI cannot approve transactions over 10000 rupees, low-confidence decisions, suspicious exceptions, or amount mismatches without human review."),
     )
     conn.executemany("INSERT OR IGNORE INTO finance_policies (policy_name, policy_text) VALUES (?, ?)", policies)
     conn.execute("""CREATE TABLE IF NOT EXISTS finance_memory (
@@ -540,6 +578,48 @@ def finance_search(q: str, limit: int = 8):
     conn.close()
     candidates.sort(key=lambda item: (item["relevance"], item.get("created_at", item.get("updated_at", ""))), reverse=True)
     return {"query": query, "results": candidates[:limit], "reranked": True}
+
+
+def build_llm_context(query: str, limit: int = 6, max_chars: int = 6000):
+    """Filter, summarize, deduplicate, and budget context before model use."""
+    search = finance_search(query, limit=min(limit * 2, 20))
+    records = []
+    seen = set()
+    for item in search["results"]:
+        identity = (item.get("record_type"), item.get("id"), item.get("source_ref"),
+                    item.get("invoice_id"), item.get("ref_id"))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        allowed = {
+            "record_type": item.get("record_type"), "relevance": item.get("relevance"),
+            "id": item.get("id"), "ref_id": item.get("ref_id"),
+            "invoice_id": item.get("invoice_id"), "order_id": item.get("order_id"),
+            "amount": item.get("amount", item.get("match_amount")),
+            "confidence_score": item.get("confidence_score"),
+            "reason": item.get("reason", item.get("exception_reason")),
+            "status": item.get("status"), "policy_text": item.get("policy_text"),
+        }
+        records.append({key: value for key, value in allowed.items() if value is not None})
+        if len(records) >= limit:
+            break
+    grouped = {}
+    for item in records:
+        grouped[item["record_type"]] = grouped.get(item["record_type"], 0) + 1
+    memories = search_finance_memory(query, min(limit, 5))["results"]
+    compact_memories = [{"content": memory.get("content"), "vendor": memory.get("vendor"),
+                         "memory_type": memory.get("memory_type")} for memory in memories]
+    context = {"record_counts": grouped, "records": records, "previous_handling": compact_memories}
+    while len(json.dumps(context, default=str)) > max_chars and context["records"]:
+        context["records"].pop()
+    return {"query": query, "context": context,
+            "selected": len(context["records"]), "memory_selected": len(compact_memories),
+            "max_chars": max_chars, "filtered": True, "summarized": True}
+
+
+@app.get("/finance/context")
+def finance_context(q: str, limit: int = 6, max_chars: int = 6000):
+    return build_llm_context(q, max(1, min(limit, 12)), max(1000, min(max_chars, 12000)))
 
 
 def retrieve_finance_context(question: str):

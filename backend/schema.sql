@@ -127,7 +127,8 @@ CREATE TABLE finance_policies (
 INSERT INTO finance_policies (policy_name, policy_text) VALUES
 ('match_tolerance', 'Exact amount matches allow a tolerance of 0.01 rupees and a date window of 3 days.'),
 ('exception_review', 'Unresolved amount mismatches require human review before reconciliation status is resolved.'),
-('audit_requirement', 'Every automated reconciliation status change must include a reason and an audit event.');
+('audit_requirement', 'Every automated reconciliation status change must include a reason and an audit event.'),
+('ai_guardrails', 'AI cannot approve transactions over 10000 rupees, low-confidence decisions, suspicious exceptions, or amount mismatches without human review.');
 
 CREATE TABLE finance_memory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

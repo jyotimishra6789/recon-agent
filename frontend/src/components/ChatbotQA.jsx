@@ -71,6 +71,9 @@ export default function ChatbotQA() {
               <span>Confidence: {m.structured.confidence_score ?? "N/A"}</span>
               <span>Reason: {m.structured.reason}</span>
               <span>Exception: {m.structured.exception_type}</span>
+              {m.structured.human_review_required && <span className="guardrail-warning">
+                Human review required: {m.structured.guardrail_reasons.join("; ") || "policy check"}
+              </span>}
               {m.structured.matched_transaction && <span>Match: {Object.values(m.structured.matched_transaction).filter((value) => value !== null).join(" · ")}</span>}
             </div>}
             {m.status && <div className="chat-status">{m.status}</div>}

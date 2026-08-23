@@ -28,6 +28,8 @@ const reconciliationResponseSchema = z.object({
     "unresolved",
     "none",
   ]).describe("The exception category, or none when no exception applies"),
+  human_review_required: z.boolean(),
+  guardrail_reasons: z.array(z.string()),
 });
 
 const financeContext = tool({
@@ -36,18 +38,14 @@ const financeContext = tool({
     focus: z.string().describe("The finance topic to investigate"),
   }),
   execute: async ({ focus }) => {
-    const [summary, search, memories] = await Promise.all([
+    const [summary, context] = await Promise.all([
       financeRequest("/stats/summary"),
-      financeRequest(`/finance/search?q=${encodeURIComponent(focus)}&limit=8`),
-      financeRequest(`/memory/search?query=${encodeURIComponent(focus)}&limit=5`),
+      financeRequest(`/finance/context?q=${encodeURIComponent(focus)}&limit=6&max_chars=6000`),
     ]);
     return {
       focus,
       summary,
-      retrieved_records: search.results,
-      reranked: search.reranked,
-      previous_handling: memories.results,
-      memory_provider: memories.provider,
+      ...context,
     };
   },
 });
@@ -99,12 +97,16 @@ const compareAmount = tool({
 });
 
 const updateReconciliationStatus = tool({
-  description: "Update an exception status only after comparison confirms the intended resolution.",
+  description: "Request a reconciliation status update. Server guardrails block AI approval of high-value, suspicious, low-confidence, or mismatched transactions and return human review requirements.",
   inputSchema: z.object({
     source_ref: z.string(),
     status: z.enum(["open", "resolved"]),
     resolution_reason: z.string(),
     pattern_type: z.string().nullable().default(null),
+    transaction_amount: z.number().nullable().default(null),
+    invoice_amount: z.number().nullable().default(null),
+    confidence_score: z.number().min(0).max(100).nullable().default(null),
+    exception_type: z.string().nullable().default(null),
   }),
   execute: (input) => financeRequest("/finance/reconciliation-status", {
     method: "POST",
@@ -124,9 +126,16 @@ export default async function handler(request) {
     return Response.json({ error: "Question must be between 1 and 500 characters" }, { status: 400 });
   }
 
+  const curatedContext = await financeRequest(
+    `/finance/context?q=${encodeURIComponent(question)}&limit=6&max_chars=6000`,
+  );
+
   const result = streamText({
     model: anthropic("claude-sonnet-4-6"),
-    system: "You are a concise financial reconciliation analyst. Return every field in the required schema. Use null for matched_transaction and confidence_score when the question is not about one transaction. Never invent amounts. Start broad questions with searchFinanceRecords and searchMemory to retrieve and rerank relevant records and previous vendor handling. Treat prior memories as guidance, not proof. For transaction investigations, follow this sequence: fetchTransaction, checkInvoice, compareAmount, then updateReconciliationStatus only when the user explicitly requests a status update and the comparison supports it. Do not update records for a read-only question.",
+    system: `You are a concise financial reconciliation analyst. Return every field in the required schema. Use null for matched_transaction and confidence_score when the question is not about one transaction. Never invent amounts. Use the curated finance context below; it has already been filtered, reranked, deduplicated, summarized, and limited to a strict budget. Use searchFinanceRecords or searchMemory only when the curated context is insufficient. Treat prior memories as guidance, not proof. For transaction investigations, follow this sequence: fetchTransaction, checkInvoice, compareAmount, then updateReconciliationStatus only when the user explicitly requests a status update and the comparison supports it. Do not update records for a read-only question.
+
+  CURATED FINANCE CONTEXT:
+  ${JSON.stringify(curatedContext)}`,
     messages: [{ role: "user", content: question }],
     tools: {
       financeContext,
