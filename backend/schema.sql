@@ -111,6 +111,8 @@ CREATE TABLE receipt_memory (
     category TEXT,
     status TEXT DEFAULT 'queued',
     context TEXT,
+    receipt_filename TEXT,
+    receipt_text TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 

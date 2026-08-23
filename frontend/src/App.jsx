@@ -6,6 +6,7 @@ import ExceptionsTable from "./components/ExceptionsTable";
 import AuditTrail from "./components/AuditTrail";
 import ChatbotQA from "./components/ChatbotQA";
 import CloseControl from "./components/CloseControl";
+import ReceiptUpload from "./components/ReceiptUpload";
 
 const TABS = [
   { id: "matches", label: "Matches" },
@@ -104,6 +105,8 @@ export default function App() {
         closeState={closeState}
         onSignOff={handleSignOff}
       />
+
+      <ReceiptUpload />
 
       <div className="two-col">
         <div>

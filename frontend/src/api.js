@@ -65,4 +65,14 @@ export const api = {
   getExceptionPatterns: () => request("/exception-patterns"),
   runStressTest: (sizes) =>
     request("/stress-test", { method: "POST", body: JSON.stringify({ sizes }) }),
+  uploadReceipt: async (file, amount, receiptDate) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (amount) form.append("amount", amount);
+    if (receiptDate) form.append("receipt_date", receiptDate);
+    const res = await fetch(`${BASE_URL}/receipts/upload`, { method: "POST", body: form });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || `Request failed: ${res.status}`);
+    return body;
+  },
 };

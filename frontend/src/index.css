@@ -275,6 +275,13 @@ tbody tr:hover { background: #f7fbf8; }
 .confidence-bar-fill.low { background: var(--red); }
 
 .section-title { margin: 0 0 10px; color: var(--ink-soft); }
+.receipt-upload { margin-bottom: 20px; padding: 14px 16px; border: 1px solid var(--line); background: white; }
+.receipt-upload-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.receipt-upload-row input { min-width: 130px; padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink); font-size: 11px; }
+.receipt-upload-row input[type="file"] { flex: 1; }
+.receipt-upload-row button { padding: 10px 13px; border: 0; border-radius: 6px; background: var(--teal); color: white; cursor: pointer; font-size: 11px; font-weight: 800; }
+.receipt-upload-row button:disabled { cursor: wait; opacity: .55; }
+.receipt-upload-status { margin-top: 8px; color: var(--muted); font-size: 11px; }
 .chat-panel { display: flex; min-height: 400px; flex-direction: column; overflow: hidden; }
 .chat-messages { display: flex; min-height: 260px; flex: 1; flex-direction: column; gap: 10px; padding: 16px; background: #fbfcfa; }
 .chat-msg { max-width: 92%; padding: 11px 12px; border-radius: 8px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }

@@ -15,19 +15,22 @@ import sqlite3
 import json
 import os
 import re
+import uuid
 from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from matching_engine import run_reconciliation, get_conn, log_audit
 
 app = FastAPI(title="Reconciliation Agent API")
+scheduler = BackgroundScheduler(daemon=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +42,45 @@ app.add_middleware(
 # ---- assumption used for the business-impact calculator ----
 MANUAL_MINUTES_PER_RECORD = 2.5  # industry-rough estimate for manual recon per line item
 last_reconcile_result = None
+
+
+def process_pending_receipts():
+    """Promote classified expenses into the ledger and run reconciliation."""
+    global last_reconcile_result
+    conn = get_conn()
+    ensure_ai_tables(conn)
+    rows = conn.execute(
+        "SELECT * FROM receipt_memory WHERE status = 'queued' AND is_expense = 1"
+    ).fetchall()
+    promoted = 0
+    for row in rows:
+        invoice_id = f"EXP-{row['receipt_ref']}"
+        conn.execute("""INSERT OR IGNORE INTO ledger_txns
+            (invoice_id, invoice_date, amount, customer_name)
+            VALUES (?, ?, ?, ?)""",
+            (invoice_id, row["receipt_date"], row["amount"], row["merchant"]))
+        conn.execute(
+            "UPDATE receipt_memory SET status = 'processed', context = ? WHERE id = ?",
+            (f"Added to reconciliation as {invoice_id}", row["id"]),
+        )
+        log_audit(conn, "receipt_added_to_reconciliation", {
+            "receipt_ref": row["receipt_ref"], "invoice_id": invoice_id,
+            "merchant": row["merchant"], "amount": row["amount"],
+        }, tier="receipt_worker")
+        promoted += 1
+    conn.commit()
+    conn.close()
+    if promoted:
+        last_reconcile_result = run_reconciliation()
+    return {"processed": promoted, "reconciliation": last_reconcile_result if promoted else None}
+
+
+@app.on_event("startup")
+def start_receipt_scheduler():
+    if not scheduler.running:
+        scheduler.add_job(process_pending_receipts, "interval", seconds=60,
+                          id="receipt-worker", replace_existing=True)
+        scheduler.start()
 
 
 @app.get("/health")
@@ -354,6 +396,28 @@ class ReceiptRequest(BaseModel):
     category: str | None = None
 
 
+def classify_receipt(filename: str, receipt_text: str):
+    """Classify receipt metadata with Claude, falling back to safe heuristics."""
+    if os.getenv("ANTHROPIC_API_KEY"):
+        try:
+            client = Anthropic()
+            response = client.messages.create(
+                model="claude-sonnet-4-6", max_tokens=120,
+                system='Return only JSON: {"is_expense": true, "category": "string", "merchant": "string", "amount": number, "receipt_date": "YYYY-MM-DD"}. Use null for unknown values.',
+                messages=[{"role": "user", "content": f"Filename: {filename}\nReceipt text: {receipt_text[:12000]}"}],
+            )
+            text = response.content[0].text.replace("```json", "").replace("```", "").strip()
+            result = json.loads(text)
+            if isinstance(result.get("is_expense"), bool):
+                return result
+        except (json.JSONDecodeError, KeyError, TypeError, IndexError):
+            pass
+    lower = f"{filename} {receipt_text}".lower()
+    is_expense = any(term in lower for term in ("receipt", "invoice", "tax", "total", "expense", "gst"))
+    return {"is_expense": is_expense, "category": "expense" if is_expense else None,
+            "merchant": os.path.splitext(filename)[0], "amount": None, "receipt_date": None}
+
+
 def ensure_ai_tables(conn):
     """Keep databases created before the AI workflow compatible."""
     conn.execute("""CREATE TABLE IF NOT EXISTS receipt_memory (
@@ -361,6 +425,10 @@ def ensure_ai_tables(conn):
         merchant TEXT NOT NULL, amount REAL NOT NULL, receipt_date TEXT NOT NULL,
         category TEXT, status TEXT DEFAULT 'queued', context TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(receipt_memory)").fetchall()}
+    for name, definition in (("receipt_filename", "TEXT"), ("receipt_text", "TEXT"), ("is_expense", "INTEGER DEFAULT 1")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE receipt_memory ADD COLUMN {name} {definition}")
     conn.execute("""CREATE TABLE IF NOT EXISTS finance_policies (
         id INTEGER PRIMARY KEY AUTOINCREMENT, policy_name TEXT NOT NULL UNIQUE,
         policy_text TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
@@ -460,6 +528,43 @@ def process_receipt(body: ReceiptRequest):
     row = conn.execute("SELECT * FROM receipt_memory WHERE receipt_ref = ?", (body.receipt_ref,)).fetchone()
     conn.close()
     return {"status": "queued", "receipt": dict(row), "next_step": "reconcile"}
+
+
+@app.post("/receipts/upload")
+async def upload_receipt(file: UploadFile = File(...), amount: float | None = Form(None),
+                         receipt_date: str | None = Form(None)):
+    """Accept an employee receipt, classify it, and queue expense processing."""
+    contents = await file.read()
+    if not contents or len(contents) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Receipt must be non-empty and smaller than 10 MB")
+    filename = file.filename or "receipt"
+    receipt_text = contents.decode("utf-8", errors="ignore")
+    classification = classify_receipt(filename, receipt_text)
+    receipt_ref = f"RCPT-{uuid.uuid4().hex[:12]}"
+    is_expense = bool(classification.get("is_expense"))
+    conn = get_conn()
+    ensure_ai_tables(conn)
+    conn.execute("""INSERT INTO receipt_memory
+        (receipt_ref, merchant, amount, receipt_date, category, status, context,
+         receipt_filename, receipt_text, is_expense)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+        receipt_ref, classification.get("merchant") or filename,
+        amount if amount is not None else classification.get("amount") or 0,
+        receipt_date or classification.get("receipt_date") or datetime.now(timezone.utc).date().isoformat(),
+        classification.get("category"), "queued" if is_expense else "rejected",
+        "AI classified as an expense; awaiting scheduled reconciliation" if is_expense else "AI did not classify this upload as an expense",
+        filename, receipt_text[:12000], int(is_expense),
+    ))
+    conn.commit()
+    conn.close()
+    return {"receipt_ref": receipt_ref, "status": "queued" if is_expense else "rejected",
+            "classification": classification, "scheduled_next_run_seconds": 60}
+
+
+@app.post("/receipts/process-pending")
+def process_pending_receipts_endpoint():
+    """Cron-friendly trigger for the same worker used by the in-process scheduler."""
+    return process_pending_receipts()
 
 
 @app.post("/qa/stream")

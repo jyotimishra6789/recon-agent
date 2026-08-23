@@ -2,6 +2,8 @@ fastapi
 uvicorn[standard]
 anthropic
 python-dotenv
+python-multipart
+apscheduler
 pydantic
 pytest
 pytest-cov
