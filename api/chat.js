@@ -3,12 +3,14 @@ import { Output, streamText, tool } from "ai";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const backendUrl = process.env.RECON_BACKEND_URL || "http://127.0.0.1:8000";
 const geminiModel = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 async function financeRequest(path, options) {
-  const response = await fetch(`${backendUrl}${path}`, options);
+  const signal = options?.signal || AbortSignal.timeout(4000);
+  const response = await fetch(`${backendUrl}${path}`, { ...options, signal });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.detail || "Finance service request failed");
   return payload;
