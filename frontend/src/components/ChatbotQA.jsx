@@ -8,6 +8,8 @@ const SUGGESTIONS = [
   "How many receipts are recorded?",
   "What are the latest receipts?",
   "Total receipt expense amount?",
+  "Why was TXN10009 resolved?",
+  "Show me the reconciliation report summary",
 ];
 
 export default function ChatbotQA() {
@@ -78,6 +80,7 @@ export default function ChatbotQA() {
                 Human review required: {m.structured.guardrail_reasons.join("; ") || "policy check"}
               </span>}
               {m.structured.matched_transaction && <span>Match: {Object.values(m.structured.matched_transaction).filter((value) => value !== null).join(" · ")}</span>}
+              {m.structured.result && <pre className="chat-result">{JSON.stringify(m.structured.result, null, 2)}</pre>}
             </div>}
             {m.status && <div className="chat-status">{m.status}</div>}
             {m.sql && <div className="sql-line">{m.sql}</div>}

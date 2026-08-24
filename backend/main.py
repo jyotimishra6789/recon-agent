@@ -835,6 +835,70 @@ def run_local_qa(question: str):
     queries = None
     explanation = None
 
+    # Reference-specific questions should work without an LLM and include the
+    # audit evidence behind an exception or reconciliation decision.
+    references = re.findall(r"[A-Z]{2,10}[-_]?[A-Z0-9]{3,}", question.upper())
+    if references:
+        reference = references[0]
+        conn = get_conn()
+        exception_rows = [dict(row) for row in conn.execute(
+            "SELECT source_table, source_ref, amount, txn_date, exception_reason, status, resolved_reason, created_at "
+            "FROM exceptions WHERE UPPER(source_ref) = ? ORDER BY id DESC LIMIT 5", (reference,)
+        ).fetchall()]
+        match_rows = [dict(row) for row in conn.execute(
+            "SELECT bank_ref_id, order_id, invoice_id, match_amount, confidence_score, match_tier, match_type, reason, matched_at "
+            "FROM matches WHERE UPPER(bank_ref_id) = ? OR UPPER(order_id) = ? OR UPPER(invoice_id) = ? "
+            "ORDER BY id DESC LIMIT 5", (reference, reference, reference)
+        ).fetchall()]
+        audit_rows = []
+        for row in conn.execute(
+            "SELECT timestamp, action, tier, details FROM audit_log ORDER BY timestamp DESC LIMIT 300"
+        ).fetchall():
+            if reference in str(row["details"]).upper():
+                item = dict(row)
+                try:
+                    item["details"] = json.loads(item["details"])
+                except (TypeError, json.JSONDecodeError):
+                    pass
+                audit_rows.append(item)
+        conn.close()
+        if exception_rows:
+            row = exception_rows[0]
+            status = row["status"] or "open"
+            reason = row["resolved_reason"] if status == "resolved" else row["exception_reason"]
+            reason = reason or "No reason recorded"
+            status_text = "was resolved" if status == "resolved" else "is still open"
+            return {
+                "question": question,
+                "sql": "SELECT ... FROM exceptions WHERE source_ref = ?",
+                "explanation": f"{reference} {status_text}. Reason: {reason}.",
+                "result": [{"exception": row, "related_audit_events": audit_rows[:5]}],
+                "source": "local",
+            }
+        if match_rows:
+            return {
+                "question": question,
+                "sql": "SELECT ... FROM matches WHERE reference = ?",
+                "explanation": f"{reference} was matched. {match_rows[0]['reason'] or 'No additional matching reason was recorded.'}",
+                "result": [{"match": match_rows[0], "related_audit_events": audit_rows[:5]}],
+                "source": "local",
+            }
+        receipt_rows = []
+        conn = get_conn()
+        receipt_rows = [dict(row) for row in conn.execute(
+            "SELECT receipt_ref, merchant, amount, receipt_date, category, status, context "
+            "FROM receipt_memory WHERE UPPER(receipt_ref) = ? LIMIT 1", (reference,)
+        ).fetchall()]
+        conn.close()
+        if receipt_rows:
+            return {
+                "question": question,
+                "sql": "SELECT ... FROM receipt_memory WHERE receipt_ref = ?",
+                "explanation": f"Receipt {reference}: {receipt_rows[0]['status']} for {receipt_rows[0]['merchant']} ({receipt_rows[0]['amount']}).",
+                "result": receipt_rows,
+                "source": "local",
+            }
+
     if ("unresolved" in normalized or "open exception" in normalized or "unmatched" in normalized) and "amount" in normalized:
         queries = (
             "SELECT ROUND(COALESCE(SUM(amount), 0), 2) AS total_unresolved_amount "
@@ -879,6 +943,17 @@ def run_local_qa(question: str):
         queries = (
             "SELECT COUNT(*) AS match_count FROM matches",
             "Total number of successful reconciliation matches.",
+        )
+    elif "summary" in normalized or "report" in normalized or "overview" in normalized:
+        queries = (
+            "SELECT "
+            "(SELECT COUNT(*) FROM bank_txns) AS bank_records, "
+            "(SELECT COUNT(*) FROM settlement_txns) AS settlement_records, "
+            "(SELECT COUNT(*) FROM ledger_txns) AS ledger_records, "
+            "(SELECT COUNT(*) FROM matches) AS matches, "
+            "(SELECT COUNT(*) FROM exceptions WHERE status = 'open') AS open_exceptions, "
+            "(SELECT ROUND(COALESCE(SUM(amount), 0), 2) FROM exceptions WHERE status = 'open') AS unresolved_amount",
+            "Current reconciliation report summary.",
         )
     elif "total" in normalized and "bank" in normalized:
         queries = (
