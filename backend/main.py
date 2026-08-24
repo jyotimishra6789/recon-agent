@@ -775,7 +775,7 @@ def qa_stream(body: QARequest):
                 "matched_transaction": None, "confidence_score": None,
                 "reason": "Answered from the local reconciliation database.",
                 "exception_type": "none", "human_review_required": False,
-                "guardrail_reasons": [],
+                "guardrail_reasons": [], "source": "local",
             }
             source = "local"
         elif not os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"):
@@ -808,7 +808,7 @@ def qa_stream(body: QARequest):
                     "answer": answer, "matched_transaction": None,
                     "confidence_score": None, "reason": "Retrieved from the reconciliation database.",
                     "exception_type": "none", "human_review_required": False,
-                    "guardrail_reasons": [],
+                    "guardrail_reasons": [], "source": "gemini",
                 }
                 source = "gemini"
             except Exception:
@@ -835,11 +835,16 @@ def run_local_qa(question: str):
     queries = None
     explanation = None
 
-    if "unresolved" in normalized and "amount" in normalized:
+    if ("unresolved" in normalized or "open exception" in normalized or "unmatched" in normalized) and "amount" in normalized:
         queries = (
             "SELECT ROUND(COALESCE(SUM(amount), 0), 2) AS total_unresolved_amount "
             "FROM exceptions WHERE status = 'open'",
             "Total amount still unresolved across open exceptions.",
+        )
+    elif "how many" in normalized and ("exception" in normalized or "unresolved" in normalized):
+        queries = (
+            "SELECT COUNT(*) AS open_exception_count FROM exceptions WHERE status = 'open'",
+            "Number of exceptions still waiting for review.",
         )
     elif "reason" in normalized and ("most" in normalized or "many" in normalized):
         queries = (
@@ -848,10 +853,38 @@ def run_local_qa(question: str):
             "GROUP BY exception_reason ORDER BY exception_count DESC LIMIT 1",
             "The exception reason occurring most often in the open queue.",
         )
+    elif any(term in normalized for term in ("receipt", "expense", "merchant", "vendor")) and any(term in normalized for term in ("how many", "count", "number")):
+        queries = (
+            "SELECT COUNT(*) AS receipt_count FROM receipt_memory",
+            "Number of receipts recorded in the receipt inbox.",
+        )
+    elif any(term in normalized for term in ("receipt", "expense")) and "amount" in normalized:
+        queries = (
+            "SELECT ROUND(COALESCE(SUM(amount), 0), 2) AS total_receipt_amount "
+            "FROM receipt_memory WHERE status != 'rejected'",
+            "Total amount recorded from accepted receipts.",
+        )
+    elif any(term in normalized for term in ("receipt", "expense", "merchant", "vendor")) and any(term in normalized for term in ("latest", "recent", "last")):
+        queries = (
+            "SELECT merchant, amount, receipt_date, status FROM receipt_memory "
+            "ORDER BY created_at DESC LIMIT 5",
+            "The five most recently recorded receipts.",
+        )
     elif "llm" in normalized or "language model" in normalized:
         queries = (
             "SELECT COUNT(*) AS llm_match_count FROM matches WHERE match_tier = 'tier2_llm'",
             "Number of matches made by the LLM-assisted tier.",
+        )
+    elif "how many" in normalized and "match" in normalized:
+        queries = (
+            "SELECT COUNT(*) AS match_count FROM matches",
+            "Total number of successful reconciliation matches.",
+        )
+    elif "total" in normalized and "bank" in normalized:
+        queries = (
+            "SELECT COUNT(*) AS bank_record_count, ROUND(COALESCE(SUM(amount), 0), 2) AS bank_total "
+            "FROM bank_txns",
+            "Total records and amount in the bank transaction source.",
         )
     elif "matched" in normalized and "today" in normalized:
         queries = (

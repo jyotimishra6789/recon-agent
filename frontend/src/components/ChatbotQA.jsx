@@ -5,7 +5,9 @@ const SUGGESTIONS = [
   "Total unresolved amount?",
   "Which reason has the most exceptions?",
   "How many matches used the LLM tier?",
-  "Total amount matched today?",
+  "How many receipts are recorded?",
+  "What are the latest receipts?",
+  "Total receipt expense amount?",
 ];
 
 export default function ChatbotQA() {
@@ -68,6 +70,7 @@ export default function ChatbotQA() {
             <div style={{ whiteSpace: "pre-wrap" }}>{m.structured ? "" : m.text}</div>
             {m.structured && <div className="ai-structured">
               <strong>{m.structured.answer}</strong>
+              {m.structured.source && <span>Source: {m.structured.source}</span>}
               <span>Confidence: {m.structured.confidence_score ?? "N/A"}</span>
               <span>Reason: {m.structured.reason}</span>
               <span>Exception: {m.structured.exception_type}</span>
