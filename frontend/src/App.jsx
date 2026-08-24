@@ -80,6 +80,23 @@ export default function App() {
     ]);
   };
 
+  const handleNewPeriod = () => {
+    const reopenedAt = new Date().toISOString();
+    const nextCloseState = { reviewer: "", notes: "", signedOffAt: null };
+    setCloseState(nextCloseState);
+    localStorage.removeItem("recon-period-close");
+    setAuditLog((current) => [
+      {
+        id: `period-${reopenedAt}`,
+        timestamp: reopenedAt,
+        action: "new_period_started",
+        tier: "CONTROL",
+        details: { previous_sign_off: closeState.reviewer || "Unknown reviewer" },
+      },
+      ...current,
+    ]);
+  };
+
   return (
     <div className="app">
       <div className="header">
@@ -104,9 +121,10 @@ export default function App() {
         reconcileResult={reconcileResult}
         closeState={closeState}
         onSignOff={handleSignOff}
+        onNewPeriod={handleNewPeriod}
       />
 
-      <ReceiptUpload onProcessed={refreshAll} />
+      <ReceiptUpload onProcessed={() => { setError(null); return refreshAll(); }} />
 
       <div className="two-col">
         <div>

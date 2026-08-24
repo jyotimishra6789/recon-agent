@@ -10,7 +10,7 @@ function downloadReport(report) {
   URL.revokeObjectURL(url);
 }
 
-export default function CloseControl({ exceptions, matches, auditLog, reconcileResult, closeState, onSignOff }) {
+export default function CloseControl({ exceptions, matches, auditLog, reconcileResult, closeState, onSignOff, onNewPeriod }) {
   const [reviewer, setReviewer] = useState(closeState.reviewer || "");
   const [notes, setNotes] = useState(closeState.notes || "");
   const openExceptions = exceptions.length;
@@ -66,7 +66,10 @@ export default function CloseControl({ exceptions, matches, auditLog, reconcileR
       )}
       <div className="close-footer">
         <span>{signedOff ? "Immutable report snapshot includes sign-off and full audit trail." : "Export includes source matches, exceptions, and trace events."}</span>
-        <button className="export-btn" onClick={exportReport}>Export audit report</button>
+        <div className="close-footer-actions">
+          {signedOff && <button className="new-period-btn" onClick={() => { setReviewer(""); setNotes(""); onNewPeriod(); }}>Start new period</button>}
+          <button className="export-btn" onClick={exportReport}>Export audit report</button>
+        </div>
       </div>
     </section>
   );

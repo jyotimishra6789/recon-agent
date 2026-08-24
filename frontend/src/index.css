@@ -164,6 +164,9 @@ h1 {
 .signoff-btn:hover { background: var(--teal-dark); }
 .signoff-btn:disabled { cursor: not-allowed; opacity: 0.42; }
 .close-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+.close-footer-actions { display: flex; align-items: center; gap: 8px; }
+.new-period-btn { min-height: 36px; padding: 0 13px; border: 1px solid var(--line-strong); border-radius: 6px; cursor: pointer; background: #fff; color: var(--ink); font-size: 11px; font-weight: 800; white-space: nowrap; }
+.new-period-btn:hover { border-color: var(--teal); color: var(--teal-dark); }
 .export-btn { border: 1px solid var(--line-strong); background: white; color: var(--ink-soft); }
 .export-btn:hover { border-color: var(--teal); color: var(--teal-dark); }
 

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="960" viewBox="0 0 720 960">
+  <rect width="720" height="960" fill="#f2f0e8"/>
+  <rect x="105" y="55" width="510" height="850" rx="4" fill="#fffdf7" stroke="#d8d2c2" stroke-width="3"/>
+  <text x="360" y="125" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#17231f">ACME OFFICE SUPPLIES</text>
+  <text x="360" y="160" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" fill="#58635e">Business expense receipt</text>
+  <line x1="145" y1="195" x2="575" y2="195" stroke="#b8b2a3" stroke-width="2" stroke-dasharray="8 8"/>
+  <text x="145" y="235" font-family="Arial, sans-serif" font-size="18" fill="#58635e">Receipt: ACME-2026-0823</text>
+  <text x="145" y="267" font-family="Arial, sans-serif" font-size="18" fill="#58635e">Date: 2026-08-23</text>
+  <line x1="145" y1="300" x2="575" y2="300" stroke="#d8d2c2" stroke-width="2"/>
+  <text x="145" y="345" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#17231f">ITEM</text>
+  <text x="575" y="345" text-anchor="end" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#17231f">AMOUNT</text>
+  <text x="145" y="390" font-family="Arial, sans-serif" font-size="19" fill="#17231f">Printer paper, pens, folders</text>
+  <text x="575" y="390" text-anchor="end" font-family="Arial, sans-serif" font-size="19" fill="#17231f">2,150.00</text>
+  <text x="145" y="430" font-family="Arial, sans-serif" font-size="19" fill="#17231f">Desk organizer</text>
+  <text x="575" y="430" text-anchor="end" font-family="Arial, sans-serif" font-size="19" fill="#17231f">350.00</text>
+  <line x1="145" y1="470" x2="575" y2="470" stroke="#d8d2c2" stroke-width="2"/>
+  <text x="145" y="520" font-family="Arial, sans-serif" font-size="20" fill="#58635e">Subtotal</text>
+  <text x="575" y="520" text-anchor="end" font-family="Arial, sans-serif" font-size="20" fill="#17231f">2,500.00</text>
+  <text x="145" y="560" font-family="Arial, sans-serif" font-size="20" fill="#58635e">GST 18%</text>
+  <text x="575" y="560" text-anchor="end" font-family="Arial, sans-serif" font-size="20" fill="#17231f">450.00</text>
+  <line x1="145" y1="595" x2="575" y2="595" stroke="#17231f" stroke-width="3"/>
+  <text x="145" y="655" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#17231f">TOTAL</text>
+  <text x="575" y="655" text-anchor="end" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#078b7d">2,950.00 INR</text>
+  <text x="360" y="735" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#58635e">Paid by corporate card</text>
+  <text x="360" y="780" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#17231f">THANK YOU</text>
+  <text x="360" y="830" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" fill="#8b918b">Keep this receipt for reimbursement</text>
+</svg>

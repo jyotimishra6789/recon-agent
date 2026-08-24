@@ -15,7 +15,7 @@ export default function ReceiptUpload({ onProcessed }) {
     setStatus("");
     try {
       const result = await api.uploadReceipt(file, amount, receiptDate);
-      setStatus(result.status === "queued" ? "Queued for reconciliation" : "Not classified as an expense");
+      setStatus(result.status === "processed" ? "Processed and reconciled" : "Not classified as an expense");
       setFile(null);
       setAmount("");
       setReceiptDate("");

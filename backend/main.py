@@ -65,6 +65,7 @@ def _process_pending_receipts():
         "SELECT * FROM receipt_memory WHERE status = 'queued' AND is_expense = 1"
     ).fetchall()
     promoted = 0
+    memories = []
     for row in rows:
         invoice_id = f"EXP-{row['receipt_ref']}"
         conn.execute("""INSERT OR IGNORE INTO ledger_txns
@@ -79,14 +80,16 @@ def _process_pending_receipts():
             "receipt_ref": row["receipt_ref"], "invoice_id": invoice_id,
             "merchant": row["merchant"], "amount": row["amount"],
         }, tier="receipt_worker")
-        remember_finance_context(
+        memories.append((
             f"Receipt vendor {row['merchant']} was classified as an expense for {row['amount']} and added as {invoice_id}.",
             {"vendor": row["merchant"], "receipt_ref": row["receipt_ref"], "invoice_id": invoice_id},
             "receipt",
-        )
+        ))
         promoted += 1
     conn.commit()
     conn.close()
+    for content, metadata, memory_type in memories:
+        remember_finance_context(content, metadata, memory_type)
     if promoted:
         last_reconcile_result = run_reconciliation()
     return {"processed": promoted, "reconciliation": last_reconcile_result if promoted else None}
@@ -731,8 +734,12 @@ async def upload_receipt(file: UploadFile = File(...), amount: float | None = Fo
     ))
     conn.commit()
     conn.close()
-    return {"receipt_ref": receipt_ref, "status": "queued" if is_expense else "rejected",
-            "classification": classification, "scheduled_next_run_seconds": 60}
+    if is_expense:
+        processing = process_pending_receipts()
+        return {"receipt_ref": receipt_ref, "status": "processed",
+            "classification": classification, "processing": processing}
+    return {"receipt_ref": receipt_ref, "status": "rejected",
+            "classification": classification, "processing": None}
 
 
 @app.post("/receipts/process-pending")
