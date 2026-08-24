@@ -1,8 +1,13 @@
-const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const isLocalDevelopment = window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+const BASE_URL = process.env.REACT_APP_API_URL || (isLocalDevelopment ? "http://localhost:8000" : "");
 const STREAM_URL = process.env.REACT_APP_AI_API_URL ||
   `${BASE_URL}/qa/stream`;
 
 async function request(path, options = {}) {
+  if (!BASE_URL) {
+    throw new Error("Backend API is not configured for this deployment. Set REACT_APP_API_URL in Vercel and redeploy.");
+  }
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
@@ -66,6 +71,9 @@ export const api = {
   runStressTest: (sizes) =>
     request("/stress-test", { method: "POST", body: JSON.stringify({ sizes }) }),
   uploadReceipt: async (file, amount, receiptDate) => {
+    if (!BASE_URL) {
+      throw new Error("Backend API is not configured for this deployment. Set REACT_APP_API_URL in Vercel and redeploy.");
+    }
     const form = new FormData();
     form.append("file", file);
     if (amount) form.append("amount", amount);

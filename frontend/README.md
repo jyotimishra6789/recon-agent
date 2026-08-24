@@ -70,6 +70,11 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_google_ai_key
 RECON_BACKEND_URL=https://your-backend-host.example.com
 ```
 
+`REACT_APP_API_URL` must point to the public HTTPS URL of the separately deployed
+FastAPI backend. The frontend intentionally does not fall back to localhost in a
+production build, because `localhost` would refer to the visitor's computer and
+cause `Failed to fetch` for uploads and reconciliation.
+
 The backend is a FastAPI process with SQLite-backed local state, so it should run
 on a Python host such as Render, Railway, or a VM rather than as a Vercel static
 function. Configure the backend's CORS policy and use its public HTTPS URL for
