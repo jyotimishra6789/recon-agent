@@ -12,6 +12,43 @@ const SUGGESTIONS = [
   "Show me the reconciliation report summary",
 ];
 
+function formatValue(value) {
+  if (value === null || value === undefined || value === "") return "Not recorded";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+function ResultDetails({ result }) {
+  if (!result) return null;
+  const item = Array.isArray(result) ? result[0] : result;
+  if (!item || typeof item !== "object") return <span>Details: {formatValue(item)}</span>;
+  const exception = item.exception;
+  const match = item.match;
+  const details = exception || match || item;
+  const auditEvents = item.related_audit_events || [];
+  const fields = Object.entries(details).filter(([key]) => key !== "details");
+
+  return (
+    <div className="chat-result-details">
+      <div className="chat-detail-grid">
+        {fields.map(([key, value]) => (
+          <span key={key}><b>{key.replaceAll("_", " ")}</b>{formatValue(value)}</span>
+        ))}
+      </div>
+      {auditEvents.length > 0 && (
+        <div className="chat-audit-list">
+          <b>Related audit activity</b>
+          {auditEvents.map((event, index) => (
+            <span key={`${event.timestamp}-${index}`}>
+              {formatValue(event.action)} · {formatValue(event.timestamp)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChatbotQA() {
   const [messages, setMessages] = useState([
     { role: "bot", text: "Ask anything about data \"what is the total unresolved amount ?\"" },
@@ -80,7 +117,7 @@ export default function ChatbotQA() {
                 Human review required: {m.structured.guardrail_reasons.join("; ") || "policy check"}
               </span>}
               {m.structured.matched_transaction && <span>Match: {Object.values(m.structured.matched_transaction).filter((value) => value !== null).join(" · ")}</span>}
-              {m.structured.result && <pre className="chat-result">{JSON.stringify(m.structured.result, null, 2)}</pre>}
+              {m.structured.result && <ResultDetails result={m.structured.result} />}
             </div>}
             {m.status && <div className="chat-status">{m.status}</div>}
             {m.sql && <div className="sql-line">{m.sql}</div>}
