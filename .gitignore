@@ -27,3 +27,6 @@ frontend/build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local demo documentation
+PROJECT_VIDEO_DEMO_GUIDE.md
