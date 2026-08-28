@@ -135,6 +135,25 @@ h1 {
 .stat-value.accent { color: #557a38; }
 .stat-note { color: var(--muted); font-size: 11px; line-height: 1.45; }
 
+.cash-forecast { margin: 0 0 28px; padding: 20px 22px; }
+.forecast-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.forecast-heading h2 { margin: 6px 0 0; font-size: 20px; letter-spacing: -0.03em; }
+.forecast-badge { padding: 7px 9px; border-radius: 999px; background: var(--teal-wash); color: var(--teal-dark); font-size: 10px; font-weight: 800; }
+.forecast-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 10px; margin-top: 18px; }
+.forecast-form label { display: flex; flex-direction: column; gap: 6px; color: var(--ink-soft); font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.forecast-form input { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; outline: 0; background: #fff; color: var(--ink); font-size: 13px; letter-spacing: 0; text-transform: none; }
+.forecast-form input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-wash); }
+.forecast-btn { min-height: 38px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--teal); color: white; cursor: pointer; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.forecast-btn:hover { background: var(--teal-dark); }
+.forecast-btn:disabled { cursor: wait; opacity: 0.65; }
+.forecast-result { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.forecast-result div { display: flex; flex-direction: column; gap: 4px; }
+.forecast-result span { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.forecast-result strong { color: var(--teal); font-size: 26px; letter-spacing: -0.04em; }
+.forecast-result strong.negative { color: var(--red); }
+.forecast-result p { margin: 0; color: var(--ink-soft); font-family: 'DM Mono', monospace; font-size: 12px; }
+.forecast-error { margin-top: 12px; color: var(--red); font-size: 12px; font-weight: 700; }
+
 .close-control {
   margin: 0 0 28px;
   border: 1px solid var(--line-strong);

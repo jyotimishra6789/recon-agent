@@ -399,6 +399,36 @@ def time_saved():
     }
 
 
+class CashForecastRequest(BaseModel):
+    current_cash: float | None = None
+    expected_settlements: float | None = None
+    upcoming_expenses: float | None = None
+
+
+@app.post("/stats/cash-forecast")
+def cash_forecast(body: CashForecastRequest):
+    """Project cash from a current balance, inflows, and planned outflows."""
+    conn = get_conn()
+    try:
+        default_cash = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM bank_txns").fetchone()[0]
+        default_settlements = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM settlement_txns").fetchone()[0]
+        default_expenses = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM receipt_memory WHERE status IN ('queued', 'processed')").fetchone()[0]
+    finally:
+        conn.close()
+
+    current_cash = body.current_cash if body.current_cash is not None else default_cash
+    expected_settlements = body.expected_settlements if body.expected_settlements is not None else default_settlements
+    upcoming_expenses = body.upcoming_expenses if body.upcoming_expenses is not None else default_expenses
+    projected_balance = round(current_cash + expected_settlements - upcoming_expenses, 2)
+    return {
+        "current_cash": round(current_cash, 2),
+        "expected_settlements": round(expected_settlements, 2),
+        "upcoming_expenses": round(upcoming_expenses, 2),
+        "projected_balance": projected_balance,
+        "formula": "current cash + expected settlements - upcoming expenses",
+    }
+
+
 @app.get("/exception-patterns")
 def exception_patterns():
     """Expose the adaptive-trust table — shows how the system's confidence

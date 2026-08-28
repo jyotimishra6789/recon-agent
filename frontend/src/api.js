@@ -32,6 +32,10 @@ export const api = {
     }),
   getAuditLog: () => request("/audit-log"),
   getTimeSaved: () => request("/stats/time-saved"),
+  getCashForecast: (values) => request("/stats/cash-forecast", {
+    method: "POST",
+    body: JSON.stringify(values),
+  }),
   askQuestion: (question) =>
     request("/qa", { method: "POST", body: JSON.stringify({ question }) }),
   askQuestionStream: async (question, onEvent) => {
