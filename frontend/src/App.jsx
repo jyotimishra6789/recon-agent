@@ -181,7 +181,12 @@ export default function App() {
       </div>
   </main>
       <button className={`chat-launcher ${chatOpen ? "is-open" : ""}`} onClick={() => setChatOpen((open) => !open)} aria-label={chatOpen ? "Close data assistant" : "Open data assistant"}><span>{chatOpen ? "×" : "✦"}</span><b>{chatOpen ? "Close assistant" : "Ask Recon"}</b></button>
-      {chatOpen && <div className="chat-popover"><div className="chat-popover-heading"><div><span className="assistant-avatar">✦</span><span><b>Recon assistant</b><small>Connected to your finance data</small></span></div><button onClick={() => setChatOpen(false)} aria-label="Close chat">×</button></div><ChatbotQA /></div>}
+      {chatOpen && (
+        <div className="chat-popover">
+          <div className="chat-popover-heading"><div><span className="assistant-avatar">✦</span><span><b>Recon assistant</b><small>Connected to your finance data</small></span></div><button onClick={() => setChatOpen(false)} aria-label="Close chat">×</button></div>
+          <ChatbotQA />
+        </div>
+      )}
     </div>
   );
 }
