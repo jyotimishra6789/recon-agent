@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -12,7 +12,7 @@ export default function CashForecast() {
   const update = (key) => (event) => setValues((current) => ({ ...current, [key]: event.target.value }));
 
   const calculate = async (event) => {
-    event.preventDefault();
+    if (event) event.preventDefault();
     setBusy(true);
     setError("");
     try {
@@ -25,11 +25,16 @@ export default function CashForecast() {
     }
   };
 
+  useEffect(() => {
+    calculate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <section className="cash-forecast panel">
       <div className="forecast-heading">
         <div><span className="section-title">Forward planning</span><h2>Cash forecast</h2></div>
-        <span className="forecast-badge">3 inputs · 1 projection</span>
+        <span className="forecast-badge">Auto-calculated</span>
       </div>
       <form className="forecast-form" onSubmit={calculate}>
         <label>Current cash<input type="number" min="0" step="0.01" value={values.current_cash} onChange={update("current_cash")} placeholder="100000" /></label>
