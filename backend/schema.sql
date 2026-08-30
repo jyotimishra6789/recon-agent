@@ -6,6 +6,7 @@
 DROP TABLE IF EXISTS bank_txns;
 DROP TABLE IF EXISTS settlement_txns;
 DROP TABLE IF EXISTS ledger_txns;
+DROP TABLE IF EXISTS tax_txns;
 DROP TABLE IF EXISTS matches;
 DROP TABLE IF EXISTS match_members;
 DROP TABLE IF EXISTS exceptions;
@@ -43,15 +44,29 @@ CREATE TABLE ledger_txns (
     customer_name TEXT
 );
 
+-- Source 4: Tax records (GST, VAT, income tax, etc.)
+CREATE TABLE tax_txns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tax_id TEXT NOT NULL UNIQUE,
+    invoice_id TEXT NOT NULL,           -- reference to ledger invoice
+    tax_date TEXT NOT NULL,              -- ISO format YYYY-MM-DD
+    tax_type TEXT NOT NULL,             -- 'GST', 'VAT', 'Income_Tax', 'Other'
+    tax_rate REAL NOT NULL,             -- percentage (e.g., 18.0 for 18% GST)
+    base_amount REAL NOT NULL,          -- amount on which tax is calculated
+    tax_amount REAL NOT NULL,           -- calculated tax amount
+    description TEXT
+);
+
 -- Resolved matches across sources (the "success" output)
 CREATE TABLE matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bank_ref_id TEXT,
     order_id TEXT,
     invoice_id TEXT,
+    tax_id TEXT,                       -- for tax matches
     match_amount REAL,
     confidence_score REAL NOT NULL,     -- 0-100
-    match_tier TEXT NOT NULL,           -- 'tier1_exact' | 'tier2_llm'
+    match_tier TEXT NOT NULL,           -- 'tier1_exact' | 'tier1_split' | 'tier2_llm' | 'tier1_tax'
     match_type TEXT NOT NULL DEFAULT 'one_to_one',
     reason TEXT,                        -- human-readable explanation
     counterfactual TEXT,

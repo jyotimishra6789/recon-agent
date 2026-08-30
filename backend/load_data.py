@@ -34,13 +34,27 @@ def load():
             rows,
         )
 
+    # Load tax data if available
+    tax_file = os.path.join(BASE, "tax.csv")
+    if os.path.exists(tax_file):
+        with open(tax_file) as f:
+            rows = list(csv.DictReader(f))
+            conn.executemany(
+                """INSERT INTO tax_txns (tax_id, invoice_id, tax_date, tax_type, tax_rate, base_amount, tax_amount, description)
+                   VALUES (:tax_id, :invoice_id, :tax_date, :tax_type, :tax_rate, :base_amount, :tax_amount, :description)""",
+                rows,
+            )
+
     conn.commit()
     counts = {
         t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         for t in ("bank_txns", "settlement_txns", "ledger_txns")
     }
+    tax_count = conn.execute("SELECT COUNT(*) FROM tax_txns").fetchone()[0]
     conn.close()
     print("Loaded:", counts)
+    if tax_count > 0:
+        print(f"Tax records: {tax_count}")
 
 
 if __name__ == "__main__":

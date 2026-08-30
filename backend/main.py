@@ -181,6 +181,62 @@ def list_matches():
     return [dict(r) for r in rows]
 
 
+@app.get("/tax-matches")
+def list_tax_matches():
+    """List all tax matches with detailed breakdown."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT m.*, t.tax_type, t.tax_rate, t.base_amount, t.tax_amount,
+               l.invoice_id, l.invoice_date, l.customer_name, l.amount as invoice_amount
+        FROM matches m
+        LEFT JOIN tax_txns t ON m.tax_id = t.tax_id
+        LEFT JOIN ledger_txns l ON m.invoice_id = l.invoice_id
+        WHERE m.match_tier = 'tier1_tax'
+        ORDER BY m.confidence_score DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/tax-summary")
+def get_tax_summary():
+    """Get summary statistics for tax reconciliation."""
+    conn = get_conn()
+    try:
+        tax_count = conn.execute("SELECT COUNT(*) FROM tax_txns").fetchone()[0]
+        matched_tax = conn.execute("SELECT COUNT(*) FROM matches WHERE match_tier = 'tier1_tax'").fetchone()[0]
+        total_tax_amount = conn.execute("SELECT SUM(tax_amount) FROM tax_txns").fetchone()[0] or 0
+        matched_tax_amount = conn.execute(
+            "SELECT SUM(match_amount) FROM matches WHERE match_tier = 'tier1_tax'"
+        ).fetchone()[0] or 0
+        
+        tax_by_type = conn.execute("""
+            SELECT tax_type, COUNT(*) count, SUM(tax_amount) total_amount
+            FROM tax_txns
+            GROUP BY tax_type
+        """).fetchall()
+        
+        conn.close()
+        return {
+            "total_tax_records": tax_count,
+            "matched_tax_records": matched_tax,
+            "match_rate": round(matched_tax / tax_count * 100, 1) if tax_count > 0 else 0,
+            "total_tax_amount": round(total_tax_amount, 2),
+            "matched_tax_amount": round(matched_tax_amount, 2),
+            "tax_by_type": [
+                {
+                    "tax_type": row["tax_type"],
+                    "count": row["count"],
+                    "total_amount": round(row["total_amount"] or 0, 2),
+                }
+                for row in tax_by_type
+            ],
+        }
+    except Exception as e:
+        conn.close()
+        raise HTTPException(500, f"Error retrieving tax summary: {str(e)}")
+
+
 @app.get("/exceptions")
 def list_exceptions(status: str = "open"):
     conn = get_conn()

@@ -373,6 +373,84 @@ def flag_exceptions(conn, matched_bank_ids, matched_settle_ids, matched_ledger_i
 
 
 # ---------------------------------------------------------------------
+# TAX MATCHING - Match tax records to invoices and bank transactions
+# ---------------------------------------------------------------------
+def run_tax_match(conn, matched_tax_ids=None):
+    """
+    Match tax records (GST, VAT, Income Tax, etc.) to invoices and bank transactions.
+    
+    Approach:
+    - Match each tax record to its corresponding ledger invoice (by invoice_id)
+    - Verify the tax calculation is correct (base_amount * tax_rate / 100 = tax_amount)
+    - Track tax contributions to overall bank transaction amount
+    """
+    if matched_tax_ids is None:
+        matched_tax_ids = set()
+    
+    tax_rows = conn.execute("SELECT * FROM tax_txns").fetchall()
+    if not tax_rows:
+        return matched_tax_ids
+    
+    ledger_rows = conn.execute("SELECT * FROM ledger_txns").fetchall()
+    ledger_by_id = {l["invoice_id"]: l for l in ledger_rows}
+    
+    for t in tax_rows:
+        if t["tax_id"] in matched_tax_ids:
+            continue
+        
+        # Find corresponding ledger invoice
+        ledger = ledger_by_id.get(t["invoice_id"])
+        if not ledger:
+            log_audit(conn, "match_attempt",
+                      {"tax_id": t["tax_id"], "error": "ledger_not_found"}, tier="tier1_tax")
+            continue
+        
+        # Verify tax calculation correctness
+        expected_tax = round(t["base_amount"] * t["tax_rate"] / 100, 2)
+        tax_calc_correct = abs(expected_tax - t["tax_amount"]) <= 0.01
+        
+        # Calculate confidence based on:
+        # - Date alignment (same day = 100, within 3 days = 90+)
+        # - Tax calculation correctness (100 if correct, 80 if off by ₹0.01-0.10)
+        # - Base amount matches ledger amount (100 if matches, 85 if close)
+        confidence = 100
+        drift = days_between(t["tax_date"], ledger["invoice_date"])
+        
+        if drift > 0:
+            confidence = max(85, 100 - drift * 5)
+        
+        if not tax_calc_correct:
+            if abs(expected_tax - t["tax_amount"]) <= 0.10:
+                confidence = max(70, confidence - 15)
+            else:
+                confidence = max(50, confidence - 30)
+        
+        # Base amount should match or be part of ledger amount
+        base_match = abs(t["base_amount"] - ledger["amount"]) <= 0.01
+        if not base_match:
+            confidence = max(60, confidence - 10)
+        
+        reason = f"{t['tax_type']} {t['tax_rate']}% tax on ₹{t['base_amount']:.2f} = ₹{t['tax_amount']:.2f} for invoice {t['invoice_id']}"
+        cf_note = f"Tax amount verified: {t['tax_rate']}% of ₹{t['base_amount']:.2f} should equal ₹{expected_tax:.2f}. Actual: ₹{t['tax_amount']:.2f}"
+        
+        conn.execute(
+            """INSERT INTO matches (tax_id, invoice_id, match_amount, confidence_score, 
+               match_tier, match_type, reason, counterfactual)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (t["tax_id"], t["invoice_id"], t["tax_amount"], confidence, 
+             "tier1_tax", "tax_match", reason, cf_note),
+        )
+        log_audit(conn, "match_success",
+                  {"tax_id": t["tax_id"], "invoice_id": t["invoice_id"], 
+                   "tax_type": t["tax_type"], "confidence": confidence, "reason": reason},
+                  tier="tier1_tax")
+        
+        matched_tax_ids.add(t["tax_id"])
+    
+    return matched_tax_ids
+
+
+# ---------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------
 def run_reconciliation():
@@ -386,16 +464,18 @@ def run_reconciliation():
     t1 = run_tier1(conn)
     t_split = run_split_match(conn, *t1)
     t2 = run_tier2(conn, *t_split)
+    matched_tax_ids = run_tax_match(conn)
     flag_exceptions(conn, *t2)
 
     conn.commit()
 
     source_counts = {
         table: conn.execute(f"SELECT COUNT(*) c FROM {table}").fetchone()["c"]
-        for table in ("bank_txns", "settlement_txns", "ledger_txns")
+        for table in ("bank_txns", "settlement_txns", "ledger_txns", "tax_txns")
     }
     total_bank = source_counts["bank_txns"]
     matched_bank_records = len(t2[0])
+    matched_tax_records = len(matched_tax_ids)
     match_count = conn.execute("SELECT COUNT(*) c FROM matches").fetchone()["c"]
     exceptions = conn.execute("SELECT COUNT(*) c FROM exceptions").fetchone()["c"]
     unresolved_amounts = {
@@ -418,6 +498,7 @@ def run_reconciliation():
         "match_rate": round(matched_bank_records / total_bank * 100, 1) if total_bank else 0,
         "by_tier": by_tier,
         "source_counts": source_counts,
+        "tax_matches": matched_tax_records,
         "unresolved_amounts": unresolved_amounts,
         "duration_ms": round((time.perf_counter() - started) * 1000, 2),
     }

@@ -8,9 +8,11 @@ import ChatbotQA from "./components/ChatbotQA";
 import CloseControl from "./components/CloseControl";
 import ReceiptUpload from "./components/ReceiptUpload";
 import CashForecast from "./components/CashForecast";
+import TaxMatches from "./components/TaxMatches";
 
 const TABS = [
   { id: "matches", label: "Matches" },
+  { id: "tax", label: "Tax Matches" },
   { id: "exceptions", label: "Exceptions" },
   { id: "audit", label: "Audit Trail" },
 ];
@@ -172,6 +174,7 @@ export default function App() {
           </div>
 
           {activeTab === "matches" && <MatchesTable matches={matches} />}
+          {activeTab === "tax" && <TaxMatches />}
           {activeTab === "exceptions" && (
             <ExceptionsTable exceptions={exceptions} onResolved={refreshAll} />
           )}
