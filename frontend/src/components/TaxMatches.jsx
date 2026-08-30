@@ -16,11 +16,11 @@ export default function TaxMatches() {
     setError(null);
     try {
       const [matchesRes, summaryRes] = await Promise.all([
-        api.get("/tax-matches"),
-        api.get("/tax-summary"),
+        api.getTaxMatches(),
+        api.getTaxSummary(),
       ]);
-      setTaxMatches(matchesRes.data);
-      setTaxSummary(summaryRes.data);
+      setTaxMatches(matchesRes);
+      setTaxSummary(summaryRes);
     } catch (err) {
       setError(err.message || "Failed to fetch tax data");
     } finally {

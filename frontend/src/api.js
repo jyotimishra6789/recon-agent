@@ -87,4 +87,6 @@ export const api = {
     if (!res.ok) throw new Error(body.detail || `Request failed: ${res.status}`);
     return body;
   },
+  getTaxMatches: () => request("/tax-matches"),
+  getTaxSummary: () => request("/tax-summary"),
 };
