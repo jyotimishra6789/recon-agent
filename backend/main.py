@@ -198,43 +198,62 @@ def list_tax_matches():
     return [dict(r) for r in rows]
 
 
-@app.get("/tax-summary")
-def get_tax_summary():
-    """Get summary statistics for tax reconciliation."""
+@app.get("/orchestration/strategy-stats")
+def get_strategy_stats():
+    """Get performance metrics for each reconciliation strategy."""
+    from matching_engine import get_orchestrator
+    orch = get_orchestrator()
+    stats = orch.get_strategy_stats()
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "strategies": stats,
+        "summary": {
+            "total_attempts": sum(s["attempts"] for s in stats.values()),
+            "total_successes": sum(s["successes"] for s in stats.values()),
+            "overall_success_rate": round(
+                sum(s["successes"] for s in stats.values()) / 
+                max(1, sum(s["attempts"] for s in stats.values())) * 100, 1
+            ),
+        }
+    }
+
+
+@app.get("/orchestration/model-usage")
+def get_model_usage():
+    """Get AI model usage statistics."""
     conn = get_conn()
     try:
-        tax_count = conn.execute("SELECT COUNT(*) FROM tax_txns").fetchone()[0]
-        matched_tax = conn.execute("SELECT COUNT(*) FROM matches WHERE match_tier = 'tier1_tax'").fetchone()[0]
-        total_tax_amount = conn.execute("SELECT SUM(tax_amount) FROM tax_txns").fetchone()[0] or 0
-        matched_tax_amount = conn.execute(
-            "SELECT SUM(match_amount) FROM matches WHERE match_tier = 'tier1_tax'"
-        ).fetchone()[0] or 0
-        
-        tax_by_type = conn.execute("""
-            SELECT tax_type, COUNT(*) count, SUM(tax_amount) total_amount
-            FROM tax_txns
-            GROUP BY tax_type
+        model_usage = conn.execute("""
+            SELECT 
+                CASE 
+                    WHEN reason LIKE '%Gemini%' OR reason LIKE '%LLM%' THEN 'gemini'
+                    WHEN reason LIKE '%pattern%' OR reason LIKE '%adaptive%' THEN 'adaptive'
+                    ELSE 'deterministic'
+                END as model,
+                COUNT(*) as count
+            FROM audit_log
+            WHERE action = 'match_success'
+            GROUP BY model
         """).fetchall()
+        
+        total = sum(row["count"] for row in model_usage)
         
         conn.close()
         return {
-            "total_tax_records": tax_count,
-            "matched_tax_records": matched_tax,
-            "match_rate": round(matched_tax / tax_count * 100, 1) if tax_count > 0 else 0,
-            "total_tax_amount": round(total_tax_amount, 2),
-            "matched_tax_amount": round(matched_tax_amount, 2),
-            "tax_by_type": [
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model_distribution": [
                 {
-                    "tax_type": row["tax_type"],
+                    "model": row["model"],
                     "count": row["count"],
-                    "total_amount": round(row["total_amount"] or 0, 2),
+                    "percentage": round(row["count"] / total * 100, 1) if total > 0 else 0
                 }
-                for row in tax_by_type
+                for row in model_usage
             ],
+            "total_decisions": total,
         }
     except Exception as e:
         conn.close()
-        raise HTTPException(500, f"Error retrieving tax summary: {str(e)}")
+        return {"error": str(e), "model_distribution": []}
 
 
 @app.get("/exceptions")

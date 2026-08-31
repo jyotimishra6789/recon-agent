@@ -89,4 +89,6 @@ export const api = {
   },
   getTaxMatches: () => request("/tax-matches"),
   getTaxSummary: () => request("/tax-summary"),
+  getStrategyStats: () => request("/orchestration/strategy-stats"),
+  getModelUsage: () => request("/orchestration/model-usage"),
 };

@@ -1,13 +1,12 @@
 """
-Matching Engine - Track 04 core logic.
+Matching Engine - Track 04 core logic with Multi-Orchestration Agent
 
 Tier 1: deterministic SQL-based exact matching (amount + date window)
-Tier 2: LLM-assisted matching for near-misses (fee deductions, date drift,
-        small typos) -- bounded, structured-output prompt only, never
-        free-form reasoning.
+Tier 1.5: adaptive pattern matching using learned patterns
+Tier 2: LLM-assisted matching for near-misses
+Tier 3: Hybrid approach combining multiple signals
 
-Every decision is written to audit_log with a reason, so the pipeline
-stays explainable end to end.
+Every decision is written to audit_log with strategy used.
 """
 
 import sqlite3
@@ -16,6 +15,7 @@ import os
 import time
 from datetime import datetime, date
 from google import genai
+from orchestration_agent import ReconciliationOrchestrator, ReconciliationContext
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "recon.db")
 DATE_WINDOW_DAYS = 3          # how far apart dates can be and still be "near"
@@ -28,6 +28,17 @@ def get_conn():
     conn.execute("PRAGMA journal_mode = WAL")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+# Global orchestrator instance
+orchestrator = None
+
+def get_orchestrator():
+    """Get or create global orchestrator instance"""
+    global orchestrator
+    if orchestrator is None:
+        orchestrator = ReconciliationOrchestrator()
+    return orchestrator
 
 
 def log_audit(conn, action, details, tier=None):
@@ -75,10 +86,9 @@ def run_tier1(conn):
     """
     Try to link bank <-> settlement <-> ledger rows that are an exact
     (or near-exact, within DATE_WINDOW_DAYS) amount + date match.
-    Confidence: 100 for exact same-day, scaled down slightly for date drift.
-    Confidence is also boosted for patterns the system has learned to
-    trust from repeated human-confirmed resolutions (adaptive threshold).
+    Now using ReconciliationOrchestrator for intelligent decision making.
     """
+    orchestrator = get_orchestrator()
     bank_rows = conn.execute("SELECT * FROM bank_txns").fetchall()
     settlement_rows = conn.execute("SELECT * FROM settlement_txns").fetchall()
     ledger_rows = conn.execute("SELECT * FROM ledger_txns").fetchall()
@@ -113,35 +123,31 @@ def run_tier1(conn):
         if not best_l:
             continue
 
-        # confidence: 100 if all dates identical, decays with drift
-        drift = max(days_between(b["txn_date"], best_s["settle_date"]),
-                    days_between(b["txn_date"], best_l["invoice_date"]))
-        confidence = 100 if drift == 0 else max(85, 100 - drift * 5)
+        # Use orchestrator to make the decision
+        context = ReconciliationContext(
+            bank_record=dict(b),
+            ledger_record=dict(best_l),
+            settlement_record=dict(best_s) if best_s else None,
+        )
+        decision = orchestrator.orchestrate(context)
+        
+        if not decision.matched:
+            continue
 
-        # adaptive threshold: if this looks like a fee-deduction and humans
-        # have repeatedly confirmed that pattern before, boost confidence
-        # instead of treating it as a fresh unknown each time.
-        pattern_type = "fee_deduction" if best_s["fee"] else ("settlement_delay" if drift else None)
-        if pattern_type:
-            trust, times_seen = get_pattern_trust(conn, pattern_type)
-            if trust is not None and times_seen >= 3:
-                confidence = max(confidence, min(99, trust))
-
-        fee_note = f" (fee ₹{best_s['fee']:.2f} deducted)" if best_s["fee"] else ""
-        date_note = f", {drift}-day settlement drift" if drift else ""
-        reason = f"Exact amount match across all 3 sources{fee_note}{date_note}"
-        cf_note = counterfactual_note(drift, best_s["fee"], best_s["gross_amount"])
-
+        # Store with strategy metadata
         conn.execute(
             """INSERT INTO matches (bank_ref_id, order_id, invoice_id, match_amount,
-               confidence_score, match_tier, match_type, reason, counterfactual)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               confidence_score, match_tier, match_type, strategy, model, reason, counterfactual)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (b["ref_id"], best_s["order_id"], best_l["invoice_id"], b["amount"],
-             confidence, "tier1_exact", "one_to_one", reason, cf_note),
+             decision.confidence, "tier1_exact", "one_to_one", 
+             decision.strategy.value, decision.model.value,
+             decision.reason, decision.counterfactual),
         )
         log_audit(conn, "match_success",
                   {"bank": b["ref_id"], "order": best_s["order_id"], "invoice": best_l["invoice_id"],
-                   "confidence": confidence, "reason": reason},
+                   "confidence": decision.confidence, "strategy": decision.strategy.value, 
+                   "reason": decision.reason},
                   tier="tier1_exact")
 
         matched_bank_ids.add(b["ref_id"])
@@ -205,9 +211,10 @@ def run_split_match(conn, matched_bank_ids, matched_settle_ids, matched_ledger_i
 
         cur = conn.execute(
             """INSERT INTO matches (bank_ref_id, order_id, invoice_id, match_amount,
-               confidence_score, match_tier, match_type, reason, counterfactual)
-               VALUES (NULL, NULL, ?, ?, ?, ?, ?, ?, ?)""",
-            (l["invoice_id"], l["amount"], confidence, "tier1_split", "many_to_one", reason, cf_note),
+               confidence_score, match_tier, match_type, strategy, model, reason, counterfactual)
+               VALUES (NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (l["invoice_id"], l["amount"], confidence, "tier1_split", "many_to_one", 
+             "adaptive", "fallback", reason, cf_note),
         )
         match_id = cur.lastrowid
         for b in found_group:
@@ -326,11 +333,12 @@ def run_tier2(conn, matched_bank_ids, matched_settle_ids, matched_ledger_ids):
                    f"or if amount diverged beyond ~6% (actual model confidence: {result['confidence']}%)")
         conn.execute(
             """INSERT INTO matches (bank_ref_id, order_id, invoice_id, match_amount,
-               confidence_score, match_tier, match_type, reason, counterfactual)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               confidence_score, match_tier, match_type, strategy, model, reason, counterfactual)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (b["ref_id"], best_settlement["order_id"] if best_settlement else None,
              matched_l["invoice_id"], b["amount"],
-             result["confidence"], "tier2_llm", "one_to_one", result["reason"], cf_note),
+             result["confidence"], "tier2_llm", "one_to_one", "llm_fuzzy", "gemini", 
+             result["reason"], cf_note),
         )
         log_audit(conn, "match_success",
                   {"bank": b["ref_id"], "invoice": matched_l["invoice_id"],
@@ -377,13 +385,14 @@ def flag_exceptions(conn, matched_bank_ids, matched_settle_ids, matched_ledger_i
 # ---------------------------------------------------------------------
 def run_tax_match(conn, matched_tax_ids=None):
     """
-    Match tax records (GST, VAT, Income Tax, etc.) to invoices and bank transactions.
+    Match tax records (GST, VAT, Income Tax, etc.) to invoices using orchestrator's tax strategy.
     
     Approach:
-    - Match each tax record to its corresponding ledger invoice (by invoice_id)
-    - Verify the tax calculation is correct (base_amount * tax_rate / 100 = tax_amount)
-    - Track tax contributions to overall bank transaction amount
+    - Use orchestrator.try_tax_match() for intelligent validation
+    - Verify tax calculation, invoice association, and date alignment
+    - Track strategy used for each match
     """
+    orchestrator = get_orchestrator()
     if matched_tax_ids is None:
         matched_tax_ids = set()
     
@@ -405,44 +414,29 @@ def run_tax_match(conn, matched_tax_ids=None):
                       {"tax_id": t["tax_id"], "error": "ledger_not_found"}, tier="tier1_tax")
             continue
         
-        # Verify tax calculation correctness
-        expected_tax = round(t["base_amount"] * t["tax_rate"] / 100, 2)
-        tax_calc_correct = abs(expected_tax - t["tax_amount"]) <= 0.01
+        # Use orchestrator's tax strategy
+        context = ReconciliationContext(
+            bank_record={},  # Not applicable for tax validation
+            ledger_record=dict(ledger),
+            tax_record=dict(t),
+        )
+        decision = orchestrator.try_tax_match(context)
         
-        # Calculate confidence based on:
-        # - Date alignment (same day = 100, within 3 days = 90+)
-        # - Tax calculation correctness (100 if correct, 80 if off by ₹0.01-0.10)
-        # - Base amount matches ledger amount (100 if matches, 85 if close)
-        confidence = 100
-        drift = days_between(t["tax_date"], ledger["invoice_date"])
-        
-        if drift > 0:
-            confidence = max(85, 100 - drift * 5)
-        
-        if not tax_calc_correct:
-            if abs(expected_tax - t["tax_amount"]) <= 0.10:
-                confidence = max(70, confidence - 15)
-            else:
-                confidence = max(50, confidence - 30)
-        
-        # Base amount should match or be part of ledger amount
-        base_match = abs(t["base_amount"] - ledger["amount"]) <= 0.01
-        if not base_match:
-            confidence = max(60, confidence - 10)
-        
-        reason = f"{t['tax_type']} {t['tax_rate']}% tax on ₹{t['base_amount']:.2f} = ₹{t['tax_amount']:.2f} for invoice {t['invoice_id']}"
-        cf_note = f"Tax amount verified: {t['tax_rate']}% of ₹{t['base_amount']:.2f} should equal ₹{expected_tax:.2f}. Actual: ₹{t['tax_amount']:.2f}"
+        if not decision.matched:
+            continue
         
         conn.execute(
             """INSERT INTO matches (tax_id, invoice_id, match_amount, confidence_score, 
-               match_tier, match_type, reason, counterfactual)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (t["tax_id"], t["invoice_id"], t["tax_amount"], confidence, 
-             "tier1_tax", "tax_match", reason, cf_note),
+               match_tier, match_type, strategy, model, reason, counterfactual)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (t["tax_id"], t["invoice_id"], t["tax_amount"], decision.confidence, 
+             "tier1_tax", "tax_match", decision.strategy.value, decision.model.value,
+             decision.reason, decision.counterfactual),
         )
         log_audit(conn, "match_success",
                   {"tax_id": t["tax_id"], "invoice_id": t["invoice_id"], 
-                   "tax_type": t["tax_type"], "confidence": confidence, "reason": reason},
+                   "tax_type": t["tax_type"], "confidence": decision.confidence, 
+                   "strategy": decision.strategy.value, "reason": decision.reason},
                   tier="tier1_tax")
         
         matched_tax_ids.add(t["tax_id"])
@@ -489,6 +483,10 @@ def run_reconciliation():
         for row in conn.execute("SELECT match_tier, COUNT(*) c FROM matches GROUP BY match_tier").fetchall()
     }
 
+    # Get orchestration statistics
+    orchestrator = get_orchestrator()
+    strategy_stats = orchestrator.get_strategy_stats()
+    
     conn.close()
     return {
         "total_bank_records": total_bank,
@@ -501,6 +499,7 @@ def run_reconciliation():
         "tax_matches": matched_tax_records,
         "unresolved_amounts": unresolved_amounts,
         "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+        "strategy_stats": strategy_stats,  # Orchestrator performance metrics
     }
 
 

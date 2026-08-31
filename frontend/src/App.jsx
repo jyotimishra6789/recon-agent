@@ -9,10 +9,12 @@ import CloseControl from "./components/CloseControl";
 import ReceiptUpload from "./components/ReceiptUpload";
 import CashForecast from "./components/CashForecast";
 import TaxMatches from "./components/TaxMatches";
+import OrchestrationInsights from "./components/OrchestrationInsights";
 
 const TABS = [
   { id: "matches", label: "Matches" },
   { id: "tax", label: "Tax Matches" },
+  { id: "orchestration", label: "Orchestration" },
   { id: "exceptions", label: "Exceptions" },
   { id: "audit", label: "Audit Trail" },
 ];
@@ -175,6 +177,7 @@ export default function App() {
 
           {activeTab === "matches" && <MatchesTable matches={matches} />}
           {activeTab === "tax" && <TaxMatches />}
+          {activeTab === "orchestration" && <OrchestrationInsights />}
           {activeTab === "exceptions" && (
             <ExceptionsTable exceptions={exceptions} onResolved={refreshAll} />
           )}

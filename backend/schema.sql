@@ -68,6 +68,8 @@ CREATE TABLE matches (
     confidence_score REAL NOT NULL,     -- 0-100
     match_tier TEXT NOT NULL,           -- 'tier1_exact' | 'tier1_split' | 'tier2_llm' | 'tier1_tax'
     match_type TEXT NOT NULL DEFAULT 'one_to_one',
+    strategy TEXT DEFAULT 'deterministic',  -- which orchestration strategy: deterministic|adaptive|llm_fuzzy|hybrid|tax
+    model TEXT DEFAULT 'fallback',          -- which model provider: gemini|local|fallback
     reason TEXT,                        -- human-readable explanation
     counterfactual TEXT,
     matched_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -126,6 +128,7 @@ CREATE TABLE receipt_memory (
     receipt_date TEXT NOT NULL,
     category TEXT,
     status TEXT DEFAULT 'queued',
+    is_expense INTEGER DEFAULT 1,                  -- 1 for expense, 0 for other
     context TEXT,
     receipt_filename TEXT,
     receipt_text TEXT,
