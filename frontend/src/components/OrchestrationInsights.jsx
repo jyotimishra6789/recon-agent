@@ -1,29 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api";
-import {
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Cell,
-  
-} from "recharts";
-
-// const STRATEGY_COLORS = {
-//   deterministic: "#3b82f6",
-//   adaptive: "#8b5cf6",
-//   llm_fuzzy: "#ec4899",
-//   hybrid: "#f59e0b",
-//   tax: "#10b981",
-// };
 
 export default function OrchestrationInsights() {
   const [strategyStats, setStrategyStats] = useState(null);
@@ -38,11 +14,13 @@ export default function OrchestrationInsights() {
   const fetchOrchestrationData = async () => {
     setLoading(true);
     setError(null);
+
     try {
       const [statsRes, modelRes] = await Promise.all([
         api.getStrategyStats(),
         api.getModelUsage(),
       ]);
+
       setStrategyStats(statsRes);
       setModelUsage(modelRes);
     } catch (err) {
@@ -53,331 +31,812 @@ export default function OrchestrationInsights() {
   };
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-600">Loading orchestration data...</div>;
-  }
-
-  if (error) {
     return (
-      <div className="p-6 bg-red-50 text-red-600 rounded-lg border border-red-200">
-        ⚠️ Error: {error}
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500 text-sm">
+            Loading orchestration insights...
+          </p>
+        </div>
       </div>
     );
   }
 
-  const strategies = [
-    { id: "deterministic", label: "Deterministic", color: "#3b82f6", icon: "⚙️" },
-    { id: "adaptive", label: "Adaptive", color: "#8b5cf6", icon: "🎯" },
-    { id: "llm_fuzzy", label: "LLM Fuzzy", color: "#ec4899", icon: "🤖" },
-    { id: "hybrid", label: "Hybrid", color: "#f59e0b", icon: "🔀" },
-    { id: "tax", label: "Tax", color: "#10b981", icon: "💰" },
-  ];
-
-  // Prepare data for charts
-  const strategyChartData = strategies
-    .map((strategy) => {
-      const stats = strategyStats?.strategies[strategy.id];
-      return stats
-        ? {
-            name: strategy.label,
-            attempts: stats.attempts,
-            successes: stats.successes,
-            failures: stats.attempts - stats.successes,
-            successRate: stats.success_rate,
-          }
-        : null;
-    })
-    .filter(Boolean);
-
-  return (
-    <div className="p-6 space-y-6 bg-gradient-to-b from-gray-50 to-white">
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold text-gray-900">🎯 Orchestration Insights Dashboard</h2>
+  if (error) {
+    return (
+      <div className="m-6 p-5 bg-red-50 border border-red-200 rounded-xl">
+        <div className="font-semibold text-red-700 mb-1">
+          Unable to load orchestration data
+        </div>
+        <p className="text-sm text-red-600">{error}</p>
         <button
           onClick={fetchOrchestrationData}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
         >
-          🔄 Refresh
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  const summary = strategyStats?.summary || {};
+
+  const strategies = [
+    {
+      id: "deterministic",
+      name: "Deterministic",
+      icon: "⚙️",
+      description: "Exact amount + date rules",
+      color: "blue",
+    },
+    {
+      id: "adaptive",
+      name: "Adaptive",
+      icon: "🎯",
+      description: "Pattern-based matching",
+      color: "purple",
+    },
+    {
+      id: "llm_fuzzy",
+      name: "LLM Fuzzy",
+      icon: "🤖",
+      description: "AI for ambiguous cases",
+      color: "pink",
+    },
+    {
+      id: "hybrid",
+      name: "Hybrid",
+      icon: "🔀",
+      description: "Multi-signal scoring",
+      color: "amber",
+    },
+    {
+      id: "tax",
+      name: "Tax",
+      icon: "💰",
+      description: "Tax-specific reconciliation",
+      color: "emerald",
+    },
+  ];
+
+  const getColorClasses = (color) => {
+    const colors = {
+      blue: {
+        bg: "bg-blue-50",
+        border: "border-blue-200",
+        text: "text-blue-700",
+        bar: "bg-blue-500",
+        light: "bg-blue-100",
+      },
+      purple: {
+        bg: "bg-purple-50",
+        border: "border-purple-200",
+        text: "text-purple-700",
+        bar: "bg-purple-500",
+        light: "bg-purple-100",
+      },
+      pink: {
+        bg: "bg-pink-50",
+        border: "border-pink-200",
+        text: "text-pink-700",
+        bar: "bg-pink-500",
+        light: "bg-pink-100",
+      },
+      amber: {
+        bg: "bg-amber-50",
+        border: "border-amber-200",
+        text: "text-amber-700",
+        bar: "bg-amber-500",
+        light: "bg-amber-100",
+      },
+      emerald: {
+        bg: "bg-emerald-50",
+        border: "border-emerald-200",
+        text: "text-emerald-700",
+        bar: "bg-emerald-500",
+        light: "bg-emerald-100",
+      },
+    };
+
+    return colors[color] || colors.blue;
+  };
+
+  const totalAttempts = Number(summary.total_attempts || 0);
+  const totalSuccesses = Number(summary.total_successes || 0);
+  const successRate = Number(summary.overall_success_rate || 0);
+
+  const optimization = strategyStats?.optimization || {};
+
+  const cacheHits = Number(
+    optimization.llm_cache_hits_prevented || 0
+  );
+
+  const tokenSavedText =
+    optimization.token_reduction_estimate || "0";
+
+  const costSavings =
+    optimization.cost_savings_estimate || "$0";
+
+  const llmReduction =
+    optimization.llm_calls_reduced_by || "0";
+
+  return (
+    <div className="p-6 space-y-6 bg-[#f7f9fc] min-h-full">
+
+      {/* =========================================================
+          HEADER
+      ========================================================= */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-2xl">🎯</span>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Orchestration
+            </h1>
+          </div>
+
+          <p className="text-sm text-gray-500">
+            Intelligent routing that uses the simplest strategy first
+            and escalates only when necessary.
+          </p>
+        </div>
+
+        <button
+          onClick={fetchOrchestrationData}
+          className="px-4 py-2.5 bg-white border border-gray-200 rounded-lg
+                     text-sm font-medium text-gray-700 hover:bg-gray-50
+                     transition shadow-sm"
+        >
+          ↻ Refresh
         </button>
       </div>
 
-      {/* Overall Summary - Enhanced */}
-      {strategyStats && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="text-sm text-blue-600 font-semibold uppercase tracking-wide">📊 Total Attempts</div>
-            <div className="text-4xl font-bold text-blue-700 mt-2">
-              {strategyStats.summary.total_attempts}
+
+      {/* =========================================================
+          HERO / KEY METRICS
+      ========================================================= */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+        {/* Total attempts */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Reconciliation Tasks
+              </p>
+
+              <p className="text-3xl font-bold text-gray-900 mt-2">
+                {totalAttempts}
+              </p>
+
+              <p className="text-xs text-gray-500 mt-1">
+                Total orchestration attempts
+              </p>
             </div>
-            <div className="text-xs text-blue-500 mt-2">Reconciliation tasks</div>
-          </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="text-sm text-green-600 font-semibold uppercase tracking-wide">✅ Total Successes</div>
-            <div className="text-4xl font-bold text-green-700 mt-2">
-              {strategyStats.summary.total_successes}
+
+            <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-xl">
+              📊
             </div>
-            <div className="text-xs text-green-500 mt-2">Successfully resolved</div>
-          </div>
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-lg border border-purple-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="text-sm text-purple-600 font-semibold uppercase tracking-wide">🎯 Success Rate</div>
-            <div className="text-4xl font-bold text-purple-700 mt-2">
-              {strategyStats.summary.overall_success_rate}%
-            </div>
-            <div className="text-xs text-purple-500 mt-2">Overall performance</div>
           </div>
         </div>
-      )}
 
-      {/* Advanced Charts - Strategy Comparison */}
-      {strategyStats && strategyChartData.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Attempts vs Success Bar Chart */}
-          <div className="bg-white p-6 rounded-lg border shadow-sm">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900">📊 Attempts vs Successes by Strategy</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={strategyChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="attempts" fill="#93c5fd" name="Attempts" radius={[8, 8, 0, 0]} />
-                <Bar dataKey="successes" fill="#34d399" name="Successes" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
 
-          {/* Success Rate Line Chart */}
-          <div className="bg-white p-6 rounded-lg border shadow-sm">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900">📈 Success Rate by Strategy</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={strategyChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip formatter={(value) => `${value}%`} />
-                <Line
-                  type="monotone"
-                  dataKey="successRate"
-                  stroke="#8b5cf6"
-                  strokeWidth={3}
-                  dot={{ fill: "#8b5cf6", r: 5 }}
-                  activeDot={{ r: 7 }}
-                  name="Success Rate (%)"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+        {/* Successful */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Successfully Resolved
+              </p>
+
+              <p className="text-3xl font-bold text-gray-900 mt-2">
+                {totalSuccesses}
+              </p>
+
+              <p className="text-xs text-gray-500 mt-1">
+                Automatically reconciled
+              </p>
+            </div>
+
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-xl">
+              ✓
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Strategy Performance Cards - Enhanced */}
+
+        {/* Success rate */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Orchestration Success
+              </p>
+
+              <p className="text-3xl font-bold text-gray-900 mt-2">
+                {successRate}%
+              </p>
+
+              <p className="text-xs text-gray-500 mt-1">
+                End-to-end success rate
+              </p>
+            </div>
+
+            <div className="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center text-xl">
+              🎯
+            </div>
+          </div>
+
+          <div className="mt-4 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-purple-500 rounded-full transition-all"
+              style={{
+                width: `${Math.min(Math.max(successRate, 0), 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+
+      {/* =========================================================
+          MAIN ORCHESTRATION PIPELINE
+      ========================================================= */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+
+        <div className="p-5 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                How Recon Decides
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-1">
+                Progressive escalation keeps simple matches fast and
+                reserves AI for difficult cases.
+              </p>
+            </div>
+
+            <span className="hidden md:inline-flex px-3 py-1.5 rounded-full
+                             bg-blue-50 text-blue-700 text-xs font-semibold">
+              Multi-strategy engine
+            </span>
+          </div>
+        </div>
+
+
+        <div className="p-5">
+
+          {/* Pipeline */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+
+            {/* Stage 1 */}
+            <div className="relative">
+              <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 h-full">
+
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm">
+                    ⚙️
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-blue-600">
+                      STAGE 01
+                    </p>
+
+                    <p className="font-semibold text-gray-900">
+                      Deterministic
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Exact amount, reference and date matching.
+                </p>
+
+                <div className="mt-4 pt-3 border-t border-blue-200">
+                  <span className="text-xs font-semibold text-blue-700">
+                    Fastest path
+                  </span>
+                </div>
+              </div>
+            </div>
+
+
+            {/* Stage 2 */}
+            <div className="relative">
+              <div className="border border-purple-200 bg-purple-50 rounded-xl p-4 h-full">
+
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm">
+                    🎯
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-purple-600">
+                      STAGE 02
+                    </p>
+
+                    <p className="font-semibold text-gray-900">
+                      Adaptive
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Handles fees, settlement delays and learned patterns.
+                </p>
+
+                <div className="mt-4 pt-3 border-t border-purple-200">
+                  <span className="text-xs font-semibold text-purple-700">
+                    Pattern aware
+                  </span>
+                </div>
+              </div>
+            </div>
+
+
+            {/* Stage 3 */}
+            <div className="relative">
+              <div className="border border-pink-200 bg-pink-50 rounded-xl p-4 h-full">
+
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm">
+                    🤖
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-pink-600">
+                      STAGE 03
+                    </p>
+
+                    <p className="font-semibold text-gray-900">
+                      LLM Fuzzy
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Uses AI only when deterministic and adaptive matching
+                  are uncertain.
+                </p>
+
+                <div className="mt-4 pt-3 border-t border-pink-200">
+                  <span className="text-xs font-semibold text-pink-700">
+                    AI escalation
+                  </span>
+                </div>
+              </div>
+            </div>
+
+
+            {/* Stage 4 */}
+            <div className="relative">
+              <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 h-full">
+
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm">
+                    🔀
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-amber-600">
+                      STAGE 04
+                    </p>
+
+                    <p className="font-semibold text-gray-900">
+                      Hybrid
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Combines multiple signals when no single strategy is
+                  confident enough.
+                </p>
+
+                <div className="mt-4 pt-3 border-t border-amber-200">
+                  <span className="text-xs font-semibold text-amber-700">
+                    Final decision
+                  </span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+
+          {/* Decision rule */}
+          <div className="mt-5 bg-gray-50 border border-gray-200 rounded-lg p-4">
+
+            <div className="flex items-start gap-3">
+              <div className="text-lg">💡</div>
+
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  Core orchestration principle
+                </p>
+
+                <p className="text-xs text-gray-600 mt-1">
+                  Start with deterministic rules → escalate to adaptive
+                  matching → use AI only for ambiguous cases → combine
+                  signals when required.
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+
+      {/* =========================================================
+          STRATEGY PERFORMANCE
+      ========================================================= */}
       {strategyStats && (
-        <div className="bg-white p-6 rounded-lg border shadow-sm">
-          <h3 className="text-lg font-semibold mb-4 text-gray-900">⚡ Strategy Performance Details</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+
+          <div className="p-5 border-b border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Strategy Performance
+            </h2>
+
+            <p className="text-sm text-gray-500 mt-1">
+              Which reconciliation strategy is actually doing the work?
+            </p>
+          </div>
+
+          <div className="divide-y divide-gray-100">
+
             {strategies.map((strategy) => {
-              const stats = strategyStats.strategies[strategy.id];
+              const stats =
+                strategyStats?.strategies?.[strategy.id];
+
               if (!stats) return null;
 
-              const successRate = stats.success_rate;
-              const isHighPerforming = successRate >= 80;
+              const attempts = Number(stats.attempts || 0);
+              const successes = Number(stats.successes || 0);
+              const rate = Number(stats.success_rate || 0);
+
+              const colors = getColorClasses(strategy.color);
 
               return (
                 <div
                   key={strategy.id}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    isHighPerforming
-                      ? "bg-green-50 border-green-300 shadow-md"
-                      : "bg-gray-50 border-gray-200"
-                  }`}
+                  className="p-4 hover:bg-gray-50 transition"
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-2xl">{strategy.icon}</span>
-                    <span className="font-semibold text-sm text-gray-900">{strategy.label}</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Attempts:</span>
-                      <strong className="text-gray-900">{stats.attempts}</strong>
+                  <div className="flex flex-col md:flex-row md:items-center gap-4">
+
+                    {/* Strategy name */}
+                    <div className="flex items-center gap-3 md:w-64">
+
+                      <div
+                        className={`w-10 h-10 rounded-lg ${colors.bg}
+                                    flex items-center justify-center text-lg`}
+                      >
+                        {strategy.icon}
+                      </div>
+
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">
+                          {strategy.name}
+                        </p>
+
+                        <p className="text-xs text-gray-500">
+                          {strategy.description}
+                        </p>
+                      </div>
+
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Successes:</span>
-                      <strong className="text-green-600">{stats.successes}</strong>
+
+
+                    {/* Attempts */}
+                    <div className="md:w-28">
+                      <p className="text-xs text-gray-400">
+                        Attempts
+                      </p>
+
+                      <p className="font-semibold text-gray-900">
+                        {attempts}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 mt-3">
-                      <div className="flex-1 bg-gray-200 h-2.5 rounded-full overflow-hidden">
+
+
+                    {/* Successes */}
+                    <div className="md:w-28">
+                      <p className="text-xs text-gray-400">
+                        Successes
+                      </p>
+
+                      <p className="font-semibold text-emerald-600">
+                        {successes}
+                      </p>
+                    </div>
+
+
+                    {/* Progress */}
+                    <div className="flex-1">
+
+                      <div className="flex justify-between mb-1.5">
+                        <span className="text-xs text-gray-500">
+                          Success rate
+                        </span>
+
+                        <span className="text-xs font-bold text-gray-800">
+                          {rate}%
+                        </span>
+                      </div>
+
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                         <div
-                          className={`h-full transition-all ${
-                            isHighPerforming ? "bg-green-500" : "bg-blue-500"
-                          }`}
-                          style={{ width: `${successRate}%` }}
+                          className={`h-full ${colors.bar} rounded-full transition-all`}
+                          style={{
+                            width: `${Math.min(
+                              Math.max(rate, 0),
+                              100
+                            )}%`,
+                          }}
                         />
                       </div>
-                      <span className="font-bold text-sm text-gray-900 w-12 text-right">{successRate}%</span>
+
                     </div>
+
                   </div>
                 </div>
               );
             })}
+
           </div>
         </div>
       )}
 
-      {/* Model Usage Distribution */}
-      {modelUsage && modelUsage.model_distribution && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pie Chart - Model Distribution */}
-          <div className="bg-white p-6 rounded-lg border shadow-sm">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900">🤖 AI Model Distribution</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={modelUsage.model_distribution}
-                  dataKey="count"
-                  nameKey="model"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  label
-                >
-                  {modelUsage.model_distribution.map((_, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={["#ec4899", "#8b5cf6", "#3b82f6"][index % 3]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `${value} decisions`} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
 
-          {/* Model Usage Details */}
-          <div className="bg-white p-6 rounded-lg border shadow-sm">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900">📊 Model Usage Breakdown</h3>
+      {/* =========================================================
+          AI EFFICIENCY / OPTIMIZATION
+      ========================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* AI Usage */}
+        {modelUsage?.model_distribution && (
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+
+            <div className="flex items-center justify-between mb-5">
+
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  AI Decision Mix
+                </h2>
+
+                <p className="text-xs text-gray-500 mt-1">
+                  How the orchestration engine distributes decisions.
+                </p>
+              </div>
+
+              <div className="text-xl">
+                🤖
+              </div>
+
+            </div>
+
+
             <div className="space-y-4">
-              {modelUsage.model_distribution.map((model, idx) => (
-                <div key={model.model} className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium capitalize text-gray-900">{model.model}</span>
-                    <span className="text-sm font-semibold text-gray-600">
-                      {model.count} ({model.percentage}%)
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 h-3 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all ${
-                        ["bg-red-500", "bg-purple-500", "bg-blue-500"][idx % 3]
-                      }`}
-                      style={{ width: `${model.percentage}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200 text-sm text-blue-700">
-                <strong>Total Decisions:</strong> {modelUsage.total_decisions}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Token & Cost Savings Insights */}
-      {strategyStats?.optimization && (
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-lg border border-green-300 shadow-sm">
-          <h3 className="text-lg font-semibold mb-4 text-gray-900">💰 Token Optimization Insights</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-lg border border-green-200">
-              <div className="text-sm text-green-600 font-semibold">Cache Hits</div>
-              <div className="text-2xl font-bold text-green-700 mt-1">
-                {strategyStats.optimization.llm_cache_hits_prevented || 0}
-              </div>
-              <div className="text-xs text-green-500 mt-1">LLM calls avoided</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg border border-green-200">
-              <div className="text-sm text-green-600 font-semibold">Tokens Saved</div>
-              <div className="text-2xl font-bold text-green-700 mt-1">
-                {strategyStats.optimization.token_reduction_estimate?.split('-')[0]?.trim() || "0"}
-              </div>
-              <div className="text-xs text-green-500 mt-1">Estimated savings</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg border border-green-200">
-              <div className="text-sm text-green-600 font-semibold">Cost Savings</div>
-              <div className="text-2xl font-bold text-green-700 mt-1">
-                {strategyStats.optimization.cost_savings_estimate || "$0"}
-              </div>
-              <div className="text-xs text-green-500 mt-1">Per 100 transactions</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg border border-green-200">
-              <div className="text-sm text-green-600 font-semibold">LLM Reduction</div>
-              <div className="text-2xl font-bold text-green-700 mt-1">
-                {strategyStats.optimization.llm_calls_reduced_by || "0"}
-              </div>
-              <div className="text-xs text-green-500 mt-1">Fewer API calls</div>
-            </div>
-          </div>
-        </div>
-      )}
+              {modelUsage.model_distribution.map((model) => {
 
-      {/* Strategy Explanations */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-          <div className="font-semibold text-blue-900 mb-2">⚙️ Deterministic</div>
-          <p className="text-sm text-blue-800">
-            Exact amount + date matching. Fastest and most precise. Used when amount
-            difference is ≤₹0.01 and date drift ≤3 days.
-          </p>
+                const percentage = Number(model.percentage || 0);
+
+                return (
+                  <div key={model.model}>
+
+                    <div className="flex justify-between items-center mb-1.5">
+
+                      <span className="text-sm font-medium text-gray-700 capitalize">
+                        {model.model}
+                      </span>
+
+                      <span className="text-xs font-semibold text-gray-500">
+                        {model.count} · {percentage}%
+                      </span>
+
+                    </div>
+
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+
+                      <div
+                        className="h-full bg-indigo-500 rounded-full"
+                        style={{
+                          width: `${Math.min(
+                            Math.max(percentage, 0),
+                            100
+                          )}%`,
+                        }}
+                      />
+
+                    </div>
+
+                  </div>
+                );
+              })}
+
+            </div>
+
+
+            <div className="mt-5 pt-4 border-t border-gray-100 flex justify-between">
+
+              <span className="text-xs text-gray-500">
+                Total decisions
+              </span>
+
+              <span className="text-sm font-bold text-gray-900">
+                {modelUsage.total_decisions || 0}
+              </span>
+
+            </div>
+
+          </div>
+        )}
+
+
+        {/* Optimization */}
+        <div className="bg-gradient-to-br from-emerald-50 to-green-50
+                        border border-emerald-200 rounded-xl shadow-sm p-5">
+
+          <div className="flex items-center justify-between mb-5">
+
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                AI Efficiency
+              </h2>
+
+              <p className="text-xs text-gray-600 mt-1">
+                Cost and token optimization from smart routing.
+              </p>
+            </div>
+
+            <div className="text-xl">
+              ⚡
+            </div>
+
+          </div>
+
+
+          <div className="grid grid-cols-2 gap-3">
+
+            {/* Cache */}
+            <div className="bg-white/80 border border-emerald-100 rounded-lg p-4">
+              <p className="text-xs text-gray-500">
+                LLM calls avoided
+              </p>
+
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {cacheHits}
+              </p>
+
+              <p className="text-[11px] text-gray-500 mt-1">
+                Cache hits
+              </p>
+            </div>
+
+
+            {/* Tokens */}
+            <div className="bg-white/80 border border-emerald-100 rounded-lg p-4">
+              <p className="text-xs text-gray-500">
+                Tokens saved
+              </p>
+
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {tokenSavedText}
+              </p>
+
+              <p className="text-[11px] text-gray-500 mt-1">
+                Estimated reduction
+              </p>
+            </div>
+
+
+            {/* Cost */}
+            <div className="bg-white/80 border border-emerald-100 rounded-lg p-4">
+              <p className="text-xs text-gray-500">
+                Cost savings
+              </p>
+
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {costSavings}
+              </p>
+
+              <p className="text-[11px] text-gray-500 mt-1">
+                Per 100 transactions
+              </p>
+            </div>
+
+
+            {/* LLM reduction */}
+            <div className="bg-white/80 border border-emerald-100 rounded-lg p-4">
+              <p className="text-xs text-gray-500">
+                LLM reduction
+              </p>
+
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {llmReduction}
+              </p>
+
+              <p className="text-[11px] text-gray-500 mt-1">
+                Fewer API calls
+              </p>
+            </div>
+
+          </div>
+
+
+          {/* Key takeaway */}
+          <div className="mt-4 p-3 bg-emerald-100/70 rounded-lg">
+
+            <p className="text-xs text-emerald-800">
+              <span className="font-bold">
+                Why this matters:
+              </span>{" "}
+              Recon does not send every transaction to an LLM. It
+              escalates intelligently, keeping reconciliation fast,
+              cheaper and scalable.
+            </p>
+
+          </div>
+
         </div>
-        <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-          <div className="font-semibold text-purple-900 mb-2">🎯 Adaptive</div>
-          <p className="text-sm text-purple-800">
-            Pattern-based matching using learned rules (fee deductions, settlement
-            delays). Balances speed and accuracy.
-          </p>
-        </div>
-        <div className="bg-pink-50 p-4 rounded-lg border border-pink-200">
-          <div className="font-semibold text-pink-900 mb-2">🤖 LLM Fuzzy</div>
-          <p className="text-sm text-pink-800">
-            Gemini-powered fuzzy matching for ambiguous cases. Analyzes descriptions,
-            references, and context. Higher latency but better for edge cases.
-          </p>
-        </div>
-        <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-          <div className="font-semibold text-amber-900 mb-2">🔀 Hybrid</div>
-          <p className="text-sm text-amber-800">
-            Combines multiple weak signals when deterministic and adaptive fail.
-            Uses weighted scoring on amount and date variance.
-          </p>
-        </div>
+
       </div>
 
-      {/* Orchestration Info */}
-      <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-6 rounded-lg border border-indigo-200 shadow-sm">
-        <div className="font-semibold text-indigo-900 mb-3 text-lg">
-          ℹ️ How Multi-Orchestration Works
+
+      {/* =========================================================
+          JUDGE-FRIENDLY TAKEAWAY
+      ========================================================= */}
+      <div className="bg-gray-900 rounded-xl p-5 shadow-sm">
+
+        <div className="flex flex-col md:flex-row md:items-center
+                        md:justify-between gap-4">
+
+          <div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🚀</span>
+
+              <h2 className="text-base font-semibold text-white">
+                Why our orchestration is different
+              </h2>
+            </div>
+
+            <p className="text-sm text-gray-400 mt-2 max-w-2xl">
+              Simple transactions are resolved with deterministic
+              rules, while ambiguous transactions automatically
+              escalate to smarter strategies. This gives us the
+              accuracy of AI without paying the cost of AI on every
+              transaction.
+            </p>
+
+          </div>
+
+
+          <div className="flex-shrink-0">
+
+            <div className="px-4 py-3 rounded-lg bg-white/10 border border-white/10">
+
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">
+                Engine principle
+              </p>
+
+              <p className="text-sm font-semibold text-white mt-1">
+                Fast → Adaptive → AI
+              </p>
+
+            </div>
+
+          </div>
+
         </div>
-        <div className="text-sm text-indigo-800 space-y-2">
-          <p>
-            <strong className="text-indigo-950">Stage 1:</strong> Tries deterministic matching first (fastest).
-            If confidence ≥95%, stops here.
-          </p>
-          <p>
-            <strong className="text-indigo-950">Stage 2:</strong> If deterministic uncertain, tries adaptive
-            patterns. If confidence ≥85%, stops here.
-          </p>
-          <p>
-            <strong className="text-indigo-950">Stage 3:</strong> If still uncertain, uses LLM fuzzy matching
-            for deeper analysis. If confidence ≥70%, stops here.
-          </p>
-          <p>
-            <strong className="text-indigo-950">Stage 4:</strong> Combines all signals using hybrid scoring to
-            produce final decision.
-          </p>
-          <p className="mt-4 font-semibold text-indigo-950 bg-indigo-100 p-2 rounded">
-            🎯 Result: Fast for simple matches, intelligent for complex ones!
-          </p>
-        </div>
+
       </div>
+
     </div>
   );
 }
