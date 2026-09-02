@@ -14,11 +14,7 @@ import {
   Legend,
   ResponsiveContainer,
   Cell,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
+  
 } from "recharts";
 
 const STRATEGY_COLORS = {
