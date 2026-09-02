@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
+import Layout from "./components/Layout";
+import RightSidebar from "./components/RightSidebar";
 import SummaryCards from "./components/SummaryCards";
 import MatchesTable from "./components/MatchesTable";
 import ExceptionsTable from "./components/ExceptionsTable";
@@ -105,56 +107,43 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">R</span><span>recon<span className="brand-accent">.ai</span></span></div>
-        <div className="workspace-switcher"><span className="workspace-avatar">AC</span><span><b>Acme Corporation</b><small>Finance workspace</small></span><span className="chevron">⌄</span></div>
-        <nav className="nav-list" aria-label="Main navigation">
-          <span className="nav-label">Workspace</span>
-          <button className="nav-item active"><span>▦</span>Overview</button>
-          <button className="nav-item"><span>⇄</span>Reconciliations</button>
-          <button className="nav-item"><span>▤</span>Transactions</button>
-          <span className="nav-label">Control centre</span>
-          <button className="nav-item"><span>◌</span>Exceptions <em>{exceptions.length || ""}</em></button>
-          <button className="nav-item"><span>✓</span>Audit trail</button>
-          <button className="nav-item"><span>⚙</span>Settings</button>
-        </nav>
-        <div className="sidebar-footer"><div className="status-live"><span />All systems operational</div><small>Reconciliation Agent v1.0</small></div>
-      </aside>
+      <Layout activeTab={activeTab} setActiveTab={setActiveTab} exceptions={exceptions}>
+        {/* Overview Page */}
+        {(activeTab === "overview" || activeTab === "matches" || activeTab === "exceptions" || activeTab === "audit") && (
+          <>
+            <div className="topbar">
+              <div className="breadcrumb"><span>Workspace</span><b>/</b><strong>Overview</strong></div>
+              <div className="topbar-actions"><span className="last-sync">Last synced just now</span><button className="icon-button" aria-label="Notifications">♧</button><span className="profile">AM</span></div>
+            </div>
+            <div className="header">
+              <div>
+                <div className="header-eyebrow">Tuesday, 25 August 2026</div>
+                <h1>Good morning, Alex.</h1>
+                <div className="header-sub">Here is what's happening across your reconciliation workspace.</div>
+              </div>
+              <button className="run-btn" onClick={handleRun} disabled={running}><span>↻</span>{running ? "Reconciling…" : "Run reconciliation"}</button>
+            </div>
 
-      <main className="main-content">
-        <div className="topbar">
-          <div className="breadcrumb"><span>Workspace</span><b>/</b><strong>Overview</strong></div>
-          <div className="topbar-actions"><span className="last-sync">Last synced just now</span><button className="icon-button" aria-label="Notifications">♧</button><span className="profile">AM</span></div>
-        </div>
-        <div className="header">
-          <div>
-            <div className="header-eyebrow">Tuesday, 25 August 2026</div>
-            <h1>Good morning, Alex.</h1>
-            <div className="header-sub">Here is what's happening across your reconciliation workspace.</div>
-          </div>
-          <button className="run-btn" onClick={handleRun} disabled={running}><span>↻</span>{running ? "Reconciling…" : "Run reconciliation"}</button>
-        </div>
+          {error && <div className="error-banner">{error}</div>}
 
-      {error && <div className="error-banner">{error}</div>}
+          <section className="source-strip panel">
+            <div><span className="section-title">Active data sources</span><strong>Connected and ready to reconcile</strong></div>
+            <div className="source-items"><span><i className="source-icon bank">⌁</i><b>Bank</b><small>57 records</small><mark>Ready</mark></span><span><i className="source-icon settlement">↔</i><b>Settlement</b><small>58 records</small><mark>Ready</mark></span><span><i className="source-icon ledger">▤</i><b>Ledger</b><small>65 records</small><mark>Ready</mark></span></div>
+          </section>
+          <div className="overview-heading"><div><span className="section-title">Reconciliation overview</span><h2>Control centre</h2></div><span className="period-pill"><span />Current period · Aug 2026</span></div>
+          <SummaryCards reconcileResult={reconcileResult} timeSaved={timeSaved} />
+          <CashForecast />
+          <section className="trend-panel panel"><div className="trend-heading"><div><span className="section-title">Activity trend</span><h2>Reconciliation volume</h2></div><div className="trend-legend"><span className="matched-dot" />Matched <span className="exception-dot" />Exceptions <select defaultValue="7"><option value="7">Last 7 days</option></select></div></div><div className="trend-chart">{[42, 58, 48, 74, 56, 82, 67].map((height, index) => <div className="trend-day" key={index}><div className="bar-stack"><i style={{ height: `${height}%` }} /><b style={{ height: `${Math.max(8, height / 5)}%` }} /></div><small>{["19 Aug", "20 Aug", "21 Aug", "22 Aug", "23 Aug", "24 Aug", "Today"][index]}</small></div>)}</div></section>
 
-      <section className="source-strip panel">
-        <div><span className="section-title">Active data sources</span><strong>Connected and ready to reconcile</strong></div>
-        <div className="source-items"><span><i className="source-icon bank">⌁</i><b>Bank</b><small>57 records</small><mark>Ready</mark></span><span><i className="source-icon settlement">↔</i><b>Settlement</b><small>58 records</small><mark>Ready</mark></span><span><i className="source-icon ledger">▤</i><b>Ledger</b><small>65 records</small><mark>Ready</mark></span></div>
-      </section>
-      <div className="overview-heading"><div><span className="section-title">Reconciliation overview</span><h2>Control centre</h2></div><span className="period-pill"><span />Current period · Aug 2026</span></div>
-      <SummaryCards reconcileResult={reconcileResult} timeSaved={timeSaved} />
-      <CashForecast />
-      <section className="trend-panel panel"><div className="trend-heading"><div><span className="section-title">Activity trend</span><h2>Reconciliation volume</h2></div><div className="trend-legend"><span className="matched-dot" />Matched <span className="exception-dot" />Exceptions <select defaultValue="7"><option value="7">Last 7 days</option></select></div></div><div className="trend-chart">{[42, 58, 48, 74, 56, 82, 67].map((height, index) => <div className="trend-day" key={index}><div className="bar-stack"><i style={{ height: `${height}%` }} /><b style={{ height: `${Math.max(8, height / 5)}%` }} /></div><small>{["19 Aug", "20 Aug", "21 Aug", "22 Aug", "23 Aug", "24 Aug", "Today"][index]}</small></div>)}</div></section>
-
-      <CloseControl
-        exceptions={exceptions}
-        matches={matches}
-        auditLog={auditLog}
-        reconcileResult={reconcileResult}
-        closeState={closeState}
-        onSignOff={handleSignOff}
-        onNewPeriod={handleNewPeriod}
-      />
+          <CloseControl
+            exceptions={exceptions}
+            matches={matches}
+            auditLog={auditLog}
+            reconcileResult={reconcileResult}
+            closeState={closeState}
+            onSignOff={handleSignOff}
+            onNewPeriod={handleNewPeriod}
+          />
 
       <ReceiptUpload onProcessed={() => { setError(null); return refreshAll(); }} />
 
@@ -185,14 +174,9 @@ export default function App() {
         </div>
 
       </div>
-  </main>
-      <button className={`chat-launcher ${chatOpen ? "is-open" : ""}`} onClick={() => setChatOpen((open) => !open)} aria-label={chatOpen ? "Close data assistant" : "Open data assistant"}><span>{chatOpen ? "×" : "✦"}</span><b>{chatOpen ? "Close assistant" : "Ask Recon"}</b></button>
-      {chatOpen && (
-        <div className="chat-popover">
-          <div className="chat-popover-heading"><div><span className="assistant-avatar">✦</span><span><b>Recon assistant</b><small>Connected to your finance data</small></span></div><button onClick={() => setChatOpen(false)} aria-label="Close chat">×</button></div>
-          <ChatbotQA />
-        </div>
+      </>
       )}
+      </Layout>
     </div>
   );
 }

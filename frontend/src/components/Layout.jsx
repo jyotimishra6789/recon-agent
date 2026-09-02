@@ -1,19 +1,20 @@
 import React from "react";
 import styles from "./Layout.module.css";
+import RightSidebar from "./RightSidebar";
 
-export default function Layout({ children, sidebar, activeNav, onNavClick }) {
+export default function Layout({ children, activeTab, setActiveTab, exceptions }) {
   const navItems = [
     { id: "overview", label: "Overview", icon: "🏠" },
     { id: "reconciliations", label: "Reconciliations", icon: "⇄" },
     { id: "transactions", label: "Transactions", icon: "▤" },
-    { id: "tax-matches", label: "Tax Matches", icon: "%" },
+    { id: "tax", label: "Tax Matches", icon: "%" },
     { id: "orchestration", label: "Orchestration", icon: "⚙" },
     { id: "cash-forecast", label: "Cash Forecast", icon: "📊" },
     { id: "reports", label: "Reports", icon: "📋" },
   ];
 
   const controlCentreItems = [
-    { id: "exceptions", label: "Exceptions", icon: "⚠", badge: "15" },
+    { id: "exceptions", label: "Exceptions", icon: "⚠", badge: exceptions?.length || 0 },
     { id: "audit", label: "Audit Trail", icon: "✓" },
   ];
 
@@ -46,9 +47,9 @@ export default function Layout({ children, sidebar, activeNav, onNavClick }) {
               <button
                 key={item.id}
                 className={`${styles.navItem} ${
-                  activeNav === item.id ? styles.active : ""
+                  activeTab === item.id ? styles.active : ""
                 }`}
-                onClick={() => onNavClick(item.id)}
+                onClick={() => setActiveTab(item.id)}
               >
                 <span className={styles.navIcon}>{item.icon}</span>
                 <span className={styles.navLabel}>{item.label}</span>
@@ -65,13 +66,13 @@ export default function Layout({ children, sidebar, activeNav, onNavClick }) {
               <button
                 key={item.id}
                 className={`${styles.navItem} ${
-                  activeNav === item.id ? styles.active : ""
+                  activeTab === item.id ? styles.active : ""
                 }`}
-                onClick={() => onNavClick(item.id)}
+                onClick={() => setActiveTab(item.id)}
               >
                 <span className={styles.navIcon}>{item.icon}</span>
                 <span className={styles.navLabel}>{item.label}</span>
-                {item.badge && (
+                {item.badge > 0 && (
                   <span className={styles.navBadge}>{item.badge}</span>
                 )}
               </button>
@@ -91,9 +92,9 @@ export default function Layout({ children, sidebar, activeNav, onNavClick }) {
       {/* Main Content */}
       <main className={styles.main}>
         <div className={styles.content}>{children}</div>
-
-        {/* Right Sidebar */}
-        {sidebar && <aside className={styles.rightSidebar}>{sidebar}</aside>}
+        <aside className={styles.rightSidebar}>
+          <RightSidebar />
+        </aside>
       </main>
     </div>
   );
