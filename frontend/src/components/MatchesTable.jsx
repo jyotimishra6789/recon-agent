@@ -20,9 +20,11 @@ export default function MatchesTable({ matches }) {
             <th>Order ID</th>
             <th>Invoice ID</th>
             <th>Amount</th>
+            <th>Status</th>
             <th>Confidence</th>
             <th>Tier</th>
             <th>Reason</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -32,6 +34,7 @@ export default function MatchesTable({ matches }) {
               <td>{m.order_id || "—"}</td>
               <td>{m.invoice_id || "—"}</td>
               <td>₹{Number(m.match_amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+              <td><span className="status-pill matched">✓ Matched</span></td>
               <td>
                 <div className="confidence-bar-wrap">
                   <div className="confidence-bar">
@@ -48,7 +51,13 @@ export default function MatchesTable({ matches }) {
                   {m.match_tier === "tier1_exact" ? "Tier 1 · SQL" : "Tier 2 · LLM"}
                 </span>
               </td>
-              <td style={{ fontFamily: "var(--sans)", color: "var(--text-dim)" }}>{m.reason}</td>
+              <td style={{ fontFamily: "var(--sans)", color: "var(--text-dim)" }} title={m.reason}>{m.reason}</td>
+              <td>
+                <div className="row-actions">
+                  <button className="row-view-btn">View</button>
+                  <button className="row-kebab" aria-label="More actions">⋮</button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
