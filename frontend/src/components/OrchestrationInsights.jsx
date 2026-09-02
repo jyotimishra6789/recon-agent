@@ -17,13 +17,13 @@ import {
   
 } from "recharts";
 
-const STRATEGY_COLORS = {
-  deterministic: "#3b82f6",
-  adaptive: "#8b5cf6",
-  llm_fuzzy: "#ec4899",
-  hybrid: "#f59e0b",
-  tax: "#10b981",
-};
+// const STRATEGY_COLORS = {
+//   deterministic: "#3b82f6",
+//   adaptive: "#8b5cf6",
+//   llm_fuzzy: "#ec4899",
+//   hybrid: "#f59e0b",
+//   tax: "#10b981",
+// };
 
 export default function OrchestrationInsights() {
   const [strategyStats, setStrategyStats] = useState(null);
