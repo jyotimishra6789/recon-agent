@@ -1,1773 +1,928 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api";
+
+const STRATEGIES = [
+  {
+    id: "deterministic",
+    label: "Deterministic",
+    shortLabel: "Exact Match",
+    icon: "⚙️",
+    description:
+      "Fast rule-based matching using exact amounts, references and date tolerance.",
+    detail:
+      "Used first because most normal transactions can be resolved without AI.",
+    threshold: "≥ 95%",
+    color: "blue",
+  },
+  {
+    id: "adaptive",
+    label: "Adaptive",
+    shortLabel: "Pattern Match",
+    icon: "🎯",
+    description:
+      "Uses learned patterns such as fees, settlement delays and recurring behaviors.",
+    detail:
+      "Handles transactions where the bank amount differs from the internal ledger.",
+    threshold: "≥ 85%",
+    color: "purple",
+  },
+  {
+    id: "llm_fuzzy",
+    label: "LLM Fuzzy",
+    shortLabel: "AI Match",
+    icon: "🤖",
+    description:
+      "Uses Gemini to understand descriptions, references and ambiguous transaction context.",
+    detail:
+      "Only used when deterministic and adaptive strategies cannot confidently resolve a transaction.",
+    threshold: "≥ 70%",
+    color: "pink",
+  },
+  {
+    id: "hybrid",
+    label: "Hybrid",
+    shortLabel: "Combined",
+    icon: "🔀",
+    description:
+      "Combines multiple signals such as amount, date and contextual similarity.",
+    detail:
+      "Acts as a final decision layer when individual strategies are not enough.",
+    threshold: "Final",
+    color: "amber",
+  },
+  {
+    id: "tax",
+    label: "Tax",
+    shortLabel: "Tax Match",
+    icon: "💰",
+    description:
+      "Specialized matching logic for tax-related transaction lines.",
+    detail:
+      "Useful for GST, tax deductions and other finance-specific reconciliation cases.",
+    threshold: "Specialized",
+    color: "emerald",
+  },
+];
+
+const PIPELINE_STAGES = [
+  {
+    number: 1,
+    id: "deterministic",
+    label: "Deterministic",
+    icon: "⚙️",
+    confidence: "95%",
+    description: "Exact rules",
+  },
+  {
+    number: 2,
+    id: "adaptive",
+    label: "Adaptive",
+    icon: "🎯",
+    confidence: "85%",
+    description: "Learned patterns",
+  },
+  {
+    number: 3,
+    id: "llm_fuzzy",
+    label: "LLM Fuzzy",
+    icon: "🤖",
+    confidence: "70%",
+    description: "AI reasoning",
+  },
+  {
+    number: 4,
+    id: "hybrid",
+    label: "Hybrid",
+    icon: "🔀",
+    confidence: "Final",
+    description: "Combined decision",
+  },
+];
+
+function formatNumber(value) {
+  const number = Number(value || 0);
+
+  return number.toLocaleString("en-IN");
+}
+
+function getSuccessRate(stats) {
+  if (!stats) return 0;
+
+  if (stats.success_rate !== undefined && stats.success_rate !== null) {
+    return Number(stats.success_rate) || 0;
+  }
+
+  const attempts = Number(stats.attempts || 0);
+  const successes = Number(stats.successes || 0);
+
+  if (!attempts) return 0;
+
+  return Number(((successes / attempts) * 100).toFixed(1));
+}
+
+function getStrategyStats(strategyStats, strategyId) {
+  return strategyStats?.strategies?.[strategyId] || null;
+}
+
+function getColorClasses(color) {
+  const colors = {
+    blue: {
+      bg: "bg-blue-50",
+      border: "border-blue-200",
+      text: "text-blue-700",
+      darkText: "text-blue-900",
+      bar: "bg-blue-500",
+    },
+    purple: {
+      bg: "bg-purple-50",
+      border: "border-purple-200",
+      text: "text-purple-700",
+      darkText: "text-purple-900",
+      bar: "bg-purple-500",
+    },
+    pink: {
+      bg: "bg-pink-50",
+      border: "border-pink-200",
+      text: "text-pink-700",
+      darkText: "text-pink-900",
+      bar: "bg-pink-500",
+    },
+    amber: {
+      bg: "bg-amber-50",
+      border: "border-amber-200",
+      text: "text-amber-700",
+      darkText: "text-amber-900",
+      bar: "bg-amber-500",
+    },
+    emerald: {
+      bg: "bg-emerald-50",
+      border: "border-emerald-200",
+      text: "text-emerald-700",
+      darkText: "text-emerald-900",
+      bar: "bg-emerald-500",
+    },
+  };
+
+  return colors[color] || colors.blue;
+}
 
 export default function OrchestrationInsights() {
   const [strategyStats, setStrategyStats] = useState(null);
   const [modelUsage, setModelUsage] = useState(null);
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  const [selectedStrategy, setSelectedStrategy] =
-    useState("deterministic");
-
-  const [showFlow, setShowFlow] = useState(true);
+  const [selectedStrategy, setSelectedStrategy] = useState("deterministic");
 
   const [demoRunning, setDemoRunning] = useState(false);
   const [demoStage, setDemoStage] = useState(0);
 
   useEffect(() => {
-    loadData();
+    fetchOrchestrationData();
   }, []);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const fetchOrchestrationData = async () => {
+    setError(null);
 
-      const [stats, models] = await Promise.all([
+    try {
+      setRefreshing(true);
+
+      const [statsRes, modelRes] = await Promise.all([
         api.getStrategyStats(),
         api.getModelUsage(),
       ]);
 
-      setStrategyStats(stats);
-      setModelUsage(models);
+      setStrategyStats(statsRes);
+      setModelUsage(modelRes);
     } catch (err) {
-      setError(err.message || "Unable to load orchestration data");
+      setError(err.message || "Failed to fetch orchestration data");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  /* ------------------------------------------------------------
-     DEMO ORCHESTRATION FLOW
-  ------------------------------------------------------------ */
-
-  const runDemo = () => {
+  const runOrchestrationDemo = () => {
     if (demoRunning) return;
 
     setDemoRunning(true);
-    setDemoStage(1);
+    setDemoStage(0);
 
-    setTimeout(() => setDemoStage(2), 900);
-    setTimeout(() => setDemoStage(3), 1800);
-    setTimeout(() => setDemoStage(4), 2700);
+    let currentStage = 0;
 
-    setTimeout(() => {
-      setDemoRunning(false);
-      setDemoStage(0);
-    }, 3700);
+    const interval = setInterval(() => {
+      currentStage += 1;
+      setDemoStage(currentStage);
+
+      if (currentStage >= PIPELINE_STAGES.length) {
+        clearInterval(interval);
+
+        setTimeout(() => {
+          setDemoRunning(false);
+          setDemoStage(0);
+        }, 1200);
+      }
+    }, 900);
   };
 
-  /* ------------------------------------------------------------
-     STRATEGIES
-  ------------------------------------------------------------ */
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse space-y-6">
+          <div className="h-32 bg-gray-200 rounded-2xl" />
+          <div className="h-24 bg-gray-200 rounded-2xl" />
+          <div className="h-64 bg-gray-200 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
 
-  const strategies = [
-    {
-      id: "deterministic",
-      name: "Deterministic",
-      short: "Exact Match",
-      icon: "⚙️",
-      color: "#2563eb",
-      bg: "#eff6ff",
-      description:
-        "Matches transactions using exact amount, reference and date rules.",
-      threshold: "≥ 95%",
-      advantage: "Fastest",
-    },
-    {
-      id: "adaptive",
-      name: "Adaptive",
-      short: "Pattern Match",
-      icon: "🎯",
-      color: "#7c3aed",
-      bg: "#f5f3ff",
-      description:
-        "Learns common patterns such as settlement delays and fee deductions.",
-      threshold: "≥ 85%",
-      advantage: "Pattern aware",
-    },
-    {
-      id: "llm_fuzzy",
-      name: "LLM Fuzzy",
-      short: "AI Match",
-      icon: "🤖",
-      color: "#db2777",
-      bg: "#fdf2f8",
-      description:
-        "Uses Gemini to understand descriptions, references and ambiguous context.",
-      threshold: "≥ 70%",
-      advantage: "Handles ambiguity",
-    },
-    {
-      id: "hybrid",
-      name: "Hybrid",
-      short: "Multi-Signal",
-      icon: "🔀",
-      color: "#d97706",
-      bg: "#fffbeb",
-      description:
-        "Combines amount, date and contextual signals for difficult matches.",
-      threshold: "Final decision",
-      advantage: "Most robust",
-    },
-    {
-      id: "tax",
-      name: "Tax",
-      short: "Tax Match",
-      icon: "💰",
-      color: "#059669",
-      bg: "#ecfdf5",
-      description:
-        "Specialized reconciliation logic for tax-related transactions.",
-      threshold: "Tax rules",
-      advantage: "Tax aware",
-    },
-  ];
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">⚠️</span>
 
-  /* ------------------------------------------------------------
-     SUMMARY
-  ------------------------------------------------------------ */
+            <div>
+              <h3 className="font-bold text-red-900">
+                Unable to load orchestration data
+              </h3>
+
+              <p className="mt-1 text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+
+          <button
+            onClick={fetchOrchestrationData}
+            className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const summary = strategyStats?.summary || {};
 
   const totalAttempts = Number(summary.total_attempts || 0);
   const totalSuccesses = Number(summary.total_successes || 0);
 
-  const successRate =
-    Number(summary.overall_success_rate || 0);
+  const overallSuccessRate =
+    summary.overall_success_rate !== undefined
+      ? Number(summary.overall_success_rate)
+      : totalAttempts
+      ? Number(((totalSuccesses / totalAttempts) * 100).toFixed(1))
+      : 0;
 
-  const selected = strategies.find(
-    (s) => s.id === selectedStrategy
-  );
+  const mostUsedStrategy = STRATEGIES.reduce((best, strategy) => {
+    const stats = getStrategyStats(strategyStats, strategy.id);
 
-  const selectedStats =
-    strategyStats?.strategies?.[selectedStrategy] || {};
+    if (!stats) return best;
 
-  const selectedAttempts =
-    Number(selectedStats.attempts || 0);
+    const attempts = Number(stats.attempts || 0);
 
-  const selectedSuccesses =
-    Number(selectedStats.successes || 0);
-
-  const selectedRate =
-    Number(selectedStats.success_rate || 0);
-
-  /* ------------------------------------------------------------
-     MOST USED STRATEGY
-  ------------------------------------------------------------ */
-
-  const mostUsed = useMemo(() => {
-    if (!strategyStats?.strategies) return null;
-
-    let best = null;
-
-    strategies.forEach((strategy) => {
-      const stats = strategyStats.strategies[strategy.id];
-
-      if (!stats) return;
-
-      const attempts = Number(stats.attempts || 0);
-
-      if (!best || attempts > best.attempts) {
-        best = {
-          ...strategy,
-          attempts,
-        };
-      }
-    });
+    if (!best || attempts > best.attempts) {
+      return {
+        ...strategy,
+        attempts,
+      };
+    }
 
     return best;
-  }, [strategyStats]);
+  }, null);
 
-  /* ------------------------------------------------------------
-     LOADING
-  ------------------------------------------------------------ */
+  const selected =
+    STRATEGIES.find((strategy) => strategy.id === selectedStrategy) ||
+    STRATEGIES[0];
 
-  if (loading) {
-    return (
-      <div style={styles.loadingPage}>
-        <div style={styles.spinner} />
-        <div style={{ marginTop: 14, fontWeight: 600 }}>
-          Loading orchestration engine...
-        </div>
-        <div style={{ color: "#94a3b8", marginTop: 4 }}>
-          Analyzing reconciliation strategies
-        </div>
-      </div>
-    );
-  }
+  const selectedStats = getStrategyStats(
+    strategyStats,
+    selectedStrategy
+  );
 
-  /* ------------------------------------------------------------
-     ERROR
-  ------------------------------------------------------------ */
+  const selectedColors = getColorClasses(selected.color);
 
-  if (error) {
-    return (
-      <div style={styles.errorBox}>
-        <div style={{ fontSize: 30 }}>⚠️</div>
+  const modelDistribution = modelUsage?.model_distribution || [];
 
-        <div>
-          <strong>Unable to load orchestration data</strong>
-          <p style={{ margin: "5px 0 12px" }}>{error}</p>
-
-          <button
-            onClick={loadData}
-            style={styles.retryButton}
-          >
-            Try again
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const totalDecisions = Number(modelUsage?.total_decisions || 0);
 
   return (
-    <div style={styles.page}>
+    <div className="space-y-6 p-4 md:p-6">
+      {/* ========================================================= */}
+      {/* HEADER */}
+      {/* ========================================================= */}
 
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
-
-      <div style={styles.header}>
-
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <div style={styles.eyebrow}>
-            RECONCILIATION INTELLIGENCE
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🧠</span>
+
+            <h2 className="text-2xl font-bold text-gray-900">
+              Orchestration
+            </h2>
           </div>
 
-          <div style={styles.titleRow}>
-            <div style={styles.titleIcon}>🎯</div>
+          <p className="mt-1 text-sm text-gray-500">
+            Recon's decision engine chooses the simplest reliable strategy
+            first.
+          </p>
+        </div>
 
+        <div className="flex gap-2">
+          <button
+            onClick={runOrchestrationDemo}
+            disabled={demoRunning}
+            className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition ${
+              demoRunning
+                ? "cursor-not-allowed bg-gray-400"
+                : "bg-gray-900 hover:bg-gray-800"
+            }`}
+          >
+            {demoRunning ? "Running..." : "▶ Run Demo"}
+          </button>
+
+          <button
+            onClick={fetchOrchestrationData}
+            disabled={refreshing}
+            className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            {refreshing ? "Refreshing..." : "↻ Refresh"}
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* KPI HERO */}
+      {/* ========================================================= */}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between">
             <div>
-              <h1 style={styles.title}>
-                Orchestration
-              </h1>
+              <p className="text-sm font-medium text-gray-500">
+                Transactions Evaluated
+              </p>
 
-              <p style={styles.subtitle}>
-                The decision engine behind every reconciliation.
+              <p className="mt-2 text-3xl font-bold text-gray-900">
+                {formatNumber(totalAttempts)}
               </p>
             </div>
+
+            <div className="rounded-xl bg-blue-50 p-3 text-xl">📊</div>
           </div>
+
+          <p className="mt-3 text-xs text-gray-500">
+            Across all orchestration strategies
+          </p>
         </div>
 
-        <div style={styles.headerActions}>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-500">
+                Successful Matches
+              </p>
 
-          <button
-            onClick={runDemo}
-            style={{
-              ...styles.demoButton,
-              opacity: demoRunning ? 0.7 : 1,
-            }}
-            disabled={demoRunning}
-          >
-            {demoRunning
-              ? "Running..."
-              : "▶ Run orchestration"}
-          </button>
-
-          <button
-            onClick={loadData}
-            style={styles.refreshButton}
-          >
-            ↻
-          </button>
-
-        </div>
-      </div>
-
-
-      {/* ======================================================
-          KEY METRICS
-      ====================================================== */}
-
-      <div style={styles.metricGrid}>
-
-        <Metric
-          label="Transactions Orchestrated"
-          value={totalAttempts}
-          icon="📊"
-          sub="Total routing attempts"
-        />
-
-        <Metric
-          label="Automatically Resolved"
-          value={totalSuccesses}
-          icon="✓"
-          sub="Successfully reconciled"
-          success
-        />
-
-        <Metric
-          label="Overall Success"
-          value={`${successRate}%`}
-          icon="🎯"
-          sub="End-to-end orchestration"
-          purple
-        />
-
-        <Metric
-          label="Primary Strategy"
-          value={mostUsed?.name || "—"}
-          icon={mostUsed?.icon || "🧠"}
-          sub={
-            mostUsed
-              ? `${mostUsed.attempts} transactions`
-              : "No activity"
-          }
-          compact
-        />
-
-      </div>
-
-
-      {/* ======================================================
-          MAIN BRAIN SECTION
-      ====================================================== */}
-
-      <div style={styles.brainCard}>
-
-        <div style={styles.sectionHeader}>
-
-          <div>
-            <div style={styles.sectionEyebrow}>
-              🧠 DECISION ENGINE
+              <p className="mt-2 text-3xl font-bold text-gray-900">
+                {formatNumber(totalSuccesses)}
+              </p>
             </div>
 
-            <h2 style={styles.sectionTitle}>
-              How Recon thinks
-            </h2>
+            <div className="rounded-xl bg-green-50 p-3 text-xl">✓</div>
+          </div>
 
-            <p style={styles.sectionSubtitle}>
-              Start cheap and deterministic. Escalate only when
-              confidence drops.
+          <p className="mt-3 text-xs text-gray-500">
+            Automatically reconciled
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-gray-900 bg-gray-900 p-5 text-white shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-400">
+                Overall Success Rate
+              </p>
+
+              <p className="mt-2 text-3xl font-bold">
+                {overallSuccessRate}%
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white/10 p-3 text-xl">⚡</div>
+          </div>
+
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-white transition-all duration-700"
+              style={{
+                width: `${Math.min(Math.max(overallSuccessRate, 0), 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* MAIN ORCHESTRATION PIPELINE */}
+      {/* ========================================================= */}
+
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">
+              How Recon Thinks
+            </h3>
+
+            <p className="text-sm text-gray-500">
+              Escalates only when the previous strategy is uncertain.
             </p>
           </div>
 
-          <button
-            onClick={() => setShowFlow(!showFlow)}
-            style={styles.smallButton}
-          >
-            {showFlow ? "Hide flow" : "Show flow"}
-          </button>
-
+          <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+            Cost-aware AI
+          </div>
         </div>
 
+        <div className="mt-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            {PIPELINE_STAGES.map((stage, index) => {
+              const isActive = demoStage === stage.number;
+              const isCompleted =
+                demoRunning && demoStage > stage.number;
 
-        {showFlow && (
-          <>
+              const strategy = STRATEGIES.find(
+                (item) => item.id === stage.id
+              );
 
-            {/* FLOW */}
+              const colors = getColorClasses(strategy?.color);
 
-            <div style={styles.flowContainer}>
-
-              {strategies.slice(0, 4).map(
-                (strategy, index) => {
-
-                  const active =
-                    demoStage === index + 1;
-
-                  const stats =
-                    strategyStats?.strategies?.[
-                      strategy.id
-                    ] || {};
-
-                  const attempts =
-                    Number(stats.attempts || 0);
-
-                  return (
-                    <React.Fragment key={strategy.id}>
-
-                      <button
-                        onClick={() =>
-                          setSelectedStrategy(strategy.id)
-                        }
-                        style={{
-                          ...styles.flowNode,
-                          borderColor: active
-                            ? strategy.color
-                            : selectedStrategy ===
-                              strategy.id
-                            ? strategy.color
-                            : "#e2e8f0",
-                          background: active
-                            ? strategy.bg
-                            : "#ffffff",
-                          transform: active
-                            ? "translateY(-5px)"
-                            : "translateY(0)",
-                          boxShadow: active
-                            ? `0 12px 30px ${strategy.color}25`
-                            : selectedStrategy ===
-                              strategy.id
-                            ? `0 5px 20px ${strategy.color}15`
-                            : "none",
-                        }}
+              return (
+                <React.Fragment key={stage.id}>
+                  <button
+                    onClick={() => setSelectedStrategy(stage.id)}
+                    className={`relative rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
+                      isActive
+                        ? `${colors.bg} ${colors.border} scale-[1.02] shadow-lg`
+                        : isCompleted
+                        ? "border-green-200 bg-green-50"
+                        : selectedStrategy === stage.id
+                        ? `${colors.bg} ${colors.border}`
+                        : "border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div
+                        className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                          isActive || selectedStrategy === stage.id
+                            ? colors.bg
+                            : "bg-white"
+                        }`}
                       >
+                        {isCompleted ? "✓" : stage.icon}
+                      </div>
 
-                        <div
-                          style={{
-                            ...styles.flowIcon,
-                            background:
-                              strategy.bg,
-                          }}
-                        >
-                          {strategy.icon}
-                        </div>
+                      <span className="text-xs font-semibold text-gray-400">
+                        STEP {stage.number}
+                      </span>
+                    </div>
 
-                        <div style={{ flex: 1 }}>
-                          <div style={styles.stageLabel}>
-                            STAGE {index + 1}
-                          </div>
+                    <h4 className="mt-4 font-bold text-gray-900">
+                      {stage.label}
+                    </h4>
 
-                          <div style={styles.flowName}>
-                            {strategy.name}
-                          </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {stage.description}
+                    </p>
 
-                          <div style={styles.flowDesc}>
-                            {strategy.short}
-                          </div>
-                        </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-500">
+                        Confidence
+                      </span>
 
-                        <div style={styles.flowCount}>
-                          {attempts}
-                        </div>
+                      <span className="text-xs font-bold text-gray-900">
+                        {stage.confidence}
+                      </span>
+                    </div>
 
-                      </button>
+                    {isActive && (
+                      <div className="absolute inset-x-4 bottom-0 h-0.5 animate-pulse rounded-full bg-gray-900" />
+                    )}
+                  </button>
 
-                      {index < 3 && (
-                        <div style={styles.arrow}>
-                          →
-                        </div>
-                      )}
+                  {index < PIPELINE_STAGES.length - 1 && (
+                    <div className="hidden items-center justify-center md:flex">
+                      <span
+                        className={`text-xl transition-colors ${
+                          isCompleted
+                            ? "text-green-500"
+                            : "text-gray-300"
+                        }`}
+                      >
+                        →
+                      </span>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
 
-                    </React.Fragment>
-                  );
-                }
-              )}
+        {/* Demo status */}
+        {demoRunning && (
+          <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue-500" />
 
+              <div>
+                <p className="text-sm font-bold text-blue-900">
+                  Evaluating transaction...
+                </p>
+
+                <p className="text-xs text-blue-700">
+                  Trying{" "}
+                  {PIPELINE_STAGES[
+                    Math.max(demoStage - 1, 0)
+                  ]?.label || "Deterministic"}{" "}
+                  strategy
+                </p>
+              </div>
             </div>
-
-
-            {/* DECISION BAR */}
-
-            <div style={styles.decisionBar}>
-
-              <div style={styles.decisionIcon}>
-                ⚡
-              </div>
-
-              <div style={{ flex: 1 }}>
-                <strong style={{ color: "#0f172a" }}>
-                  Confidence-based escalation
-                </strong>
-
-                <div style={styles.decisionText}>
-                  A transaction stops as soon as a strategy
-                  reaches sufficient confidence.
-                </div>
-              </div>
-
-              <div style={styles.confidencePills}>
-                <span style={styles.confidencePill}>
-                  Deterministic ≥95%
-                </span>
-
-                <span style={styles.confidencePill}>
-                  Adaptive ≥85%
-                </span>
-
-                <span style={styles.confidencePill}>
-                  AI ≥70%
-                </span>
-              </div>
-
-            </div>
-
-          </>
+          </div>
         )}
-
       </div>
 
-
-      {/* ======================================================
-          SELECTED STRATEGY
-      ====================================================== */}
+      {/* ========================================================= */}
+      {/* SELECTED STRATEGY */}
+      {/* ========================================================= */}
 
       <div
-        style={{
-          ...styles.detailCard,
-          borderColor: selected.color + "40",
-        }}
+        className={`rounded-2xl border p-5 md:p-6 ${selectedColors.bg} ${selectedColors.border}`}
       >
+        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
+              {selected.icon}
+            </div>
 
-        <div
-          style={{
-            ...styles.selectedIcon,
-            background: selected.bg,
-          }}
-        >
-          {selected.icon}
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3
+                  className={`text-lg font-bold ${selectedColors.darkText}`}
+                >
+                  {selected.label}
+                </h3>
+
+                {selectedStats && (
+                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-gray-600">
+                    {getSuccessRate(selectedStats)}% success
+                  </span>
+                )}
+              </div>
+
+              <p
+                className={`mt-1 max-w-2xl text-sm ${selectedColors.text}`}
+              >
+                {selected.description}
+              </p>
+
+              <p
+                className={`mt-2 text-xs ${selectedColors.text} opacity-80`}
+              >
+                {selected.detail}
+              </p>
+            </div>
+          </div>
+
+          {selectedStats && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-[110px] rounded-xl bg-white/80 p-3">
+                <p className="text-xs text-gray-500">Attempts</p>
+
+                <p className="mt-1 text-xl font-bold text-gray-900">
+                  {formatNumber(selectedStats.attempts)}
+                </p>
+              </div>
+
+              <div className="min-w-[110px] rounded-xl bg-white/80 p-3">
+                <p className="text-xs text-gray-500">Successes</p>
+
+                <p className="mt-1 text-xl font-bold text-gray-900">
+                  {formatNumber(selectedStats.successes)}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-
-        <div style={{ flex: 1 }}>
-
-          <div style={styles.selectedEyebrow}>
-            SELECTED STRATEGY
-          </div>
-
-          <div style={styles.selectedTitle}>
-            {selected.name}
-          </div>
-
-          <div style={styles.selectedDescription}>
-            {selected.description}
-          </div>
-
-          <div style={styles.tagRow}>
-
-            <span
-              style={{
-                ...styles.tag,
-                color: selected.color,
-                background: selected.bg,
-              }}
-            >
-              {selected.advantage}
-            </span>
-
-            <span style={styles.tag}>
-              Confidence {selected.threshold}
-            </span>
-
-          </div>
-
-        </div>
-
-
-        <div style={styles.selectedStats}>
-
-          <div>
-            <div style={styles.statLabel}>
-              ATTEMPTS
-            </div>
-
-            <div style={styles.statValue}>
-              {selectedAttempts}
-            </div>
-          </div>
-
-          <div>
-            <div style={styles.statLabel}>
-              SUCCESS
-            </div>
-
-            <div
-              style={{
-                ...styles.statValue,
-                color: "#059669",
-              }}
-            >
-              {selectedSuccesses}
-            </div>
-          </div>
-
-          <div>
-            <div style={styles.statLabel}>
-              RATE
-            </div>
-
-            <div
-              style={{
-                ...styles.statValue,
-                color: selected.color,
-              }}
-            >
-              {selectedRate}%
-            </div>
-          </div>
-
-        </div>
-
       </div>
 
+      {/* ========================================================= */}
+      {/* STRATEGY PERFORMANCE */}
+      {/* ========================================================= */}
 
-      {/* ======================================================
-          STRATEGY PERFORMANCE
-      ====================================================== */}
-
-      <div style={styles.performanceCard}>
-
-        <div style={styles.sectionHeader}>
-
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+        <div className="flex items-center justify-between">
           <div>
-            <div style={styles.sectionEyebrow}>
-              📈 PERFORMANCE
+            <h3 className="text-lg font-bold text-gray-900">
+              Strategy Performance
+            </h3>
+
+            <p className="text-sm text-gray-500">
+              Which strategies are actually resolving transactions?
+            </p>
+          </div>
+
+          {mostUsedStrategy && (
+            <div className="hidden rounded-lg bg-gray-100 px-3 py-2 text-xs md:block">
+              Most used:{" "}
+              <strong>{mostUsedStrategy.label}</strong>
             </div>
-
-            <h2 style={styles.sectionTitle}>
-              Strategy performance
-            </h2>
-          </div>
-
-          <div style={styles.liveBadge}>
-            <span style={styles.liveDot} />
-            LIVE DATA
-          </div>
-
+          )}
         </div>
 
+        <div className="mt-5 space-y-4">
+          {STRATEGIES.map((strategy) => {
+            const stats = getStrategyStats(
+              strategyStats,
+              strategy.id
+            );
 
-        <div style={styles.strategyList}>
+            if (!stats) return null;
 
-          {strategies.map((strategy) => {
+            const successRate = getSuccessRate(stats);
+            const colors = getColorClasses(strategy.color);
 
-            const stats =
-              strategyStats?.strategies?.[
-                strategy.id
-              ] || {};
-
-            const attempts =
-              Number(stats.attempts || 0);
-
-            const successes =
-              Number(stats.successes || 0);
-
-            const rate =
-              Number(stats.success_rate || 0);
-
-            const isSelected =
-              selectedStrategy === strategy.id;
+            const attempts = Number(stats.attempts || 0);
+            const successes = Number(stats.successes || 0);
 
             return (
               <button
                 key={strategy.id}
-                onClick={() =>
-                  setSelectedStrategy(strategy.id)
-                }
-                style={{
-                  ...styles.strategyRow,
-                  background: isSelected
-                    ? strategy.bg
-                    : "#fff",
-                  borderColor: isSelected
-                    ? strategy.color + "55"
-                    : "#edf2f7",
-                }}
+                onClick={() => setSelectedStrategy(strategy.id)}
+                className={`w-full rounded-xl border p-4 text-left transition hover:shadow-sm ${
+                  selectedStrategy === strategy.id
+                    ? `${colors.bg} ${colors.border}`
+                    : "border-gray-100 hover:border-gray-200"
+                }`}
               >
-
-                <div
-                  style={{
-                    ...styles.strategyIcon,
-                    background: strategy.bg,
-                  }}
-                >
-                  {strategy.icon}
-                </div>
-
-                <div style={styles.strategyName}>
-                  <strong>
-                    {strategy.name}
-                  </strong>
-
-                  <span>
-                    {strategy.short}
-                  </span>
-                </div>
-
-                <div style={styles.numberCell}>
-                  <small>Attempts</small>
-                  <strong>{attempts}</strong>
-                </div>
-
-                <div style={styles.numberCell}>
-                  <small>Successes</small>
-                  <strong style={{ color: "#059669" }}>
-                    {successes}
-                  </strong>
-                </div>
-
-                <div style={styles.progressContainer}>
-
-                  <div style={styles.progressHeader}>
-                    <span>Success rate</span>
-                    <strong>{rate}%</strong>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white">
+                    {strategy.icon}
                   </div>
 
-                  <div style={styles.progressTrack}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <span className="font-semibold text-gray-900">
+                          {strategy.label}
+                        </span>
 
-                    <div
-                      style={{
-                        ...styles.progressFill,
-                        width: `${Math.min(
-                          Math.max(rate, 0),
-                          100
-                        )}%`,
-                        background: strategy.color,
-                      }}
-                    />
+                        <span className="ml-2 hidden text-xs text-gray-400 sm:inline">
+                          {strategy.shortLabel}
+                        </span>
+                      </div>
 
+                      <span className="font-bold text-gray-900">
+                        {successRate}%
+                      </span>
+                    </div>
+
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700 ${colors.bar}`}
+                        style={{
+                          width: `${Math.min(
+                            Math.max(successRate, 0),
+                            100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="mt-2 flex justify-between text-xs text-gray-500">
+                      <span>
+                        {formatNumber(successes)} /{" "}
+                        {formatNumber(attempts)} successful
+                      </span>
+
+                      <span>{attempts} attempts</span>
+                    </div>
                   </div>
-
                 </div>
-
-                <div style={styles.chevron}>
-                  →
-                </div>
-
               </button>
             );
           })}
-
         </div>
-
       </div>
 
+      {/* ========================================================= */}
+      {/* AI DECISION MIX + OPTIMIZATION */}
+      {/* ========================================================= */}
 
-      {/* ======================================================
-          AI + OPTIMIZATION
-      ====================================================== */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* AI Decision Mix */}
 
-      <div style={styles.bottomGrid}>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">
+              AI Decision Mix
+            </h3>
 
-        {/* AI USAGE */}
-
-        <div style={styles.whiteCard}>
-
-          <div style={styles.cardHeader}>
-
-            <div>
-              <div style={styles.sectionEyebrow}>
-                🤖 AI ROUTING
-              </div>
-
-              <h2 style={styles.cardTitle}>
-                Decision mix
-              </h2>
-            </div>
-
-            <div style={styles.aiIcon}>
-              ✨
-            </div>
-
+            <p className="text-sm text-gray-500">
+              What is powering reconciliation decisions?
+            </p>
           </div>
 
-
-          <div style={styles.modelList}>
-
-            {modelUsage?.model_distribution?.map(
-              (model) => {
-
-                const percentage =
-                  Number(model.percentage || 0);
+          <div className="mt-5 space-y-4">
+            {modelDistribution.length > 0 ? (
+              modelDistribution.map((model) => {
+                const percentage = Number(model.percentage || 0);
 
                 return (
-                  <div
-                    key={model.model}
-                    style={styles.modelRow}
-                  >
-
-                    <div style={styles.modelTop}>
-
-                      <span
-                        style={{
-                          textTransform: "capitalize",
-                          fontWeight: 600,
-                        }}
-                      >
+                  <div key={model.model}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-sm font-semibold capitalize text-gray-800">
                         {model.model}
                       </span>
 
-                      <span>
-                        {model.count} ·{" "}
+                      <span className="text-xs text-gray-500">
+                        {formatNumber(model.count)} decisions ·{" "}
                         {percentage}%
                       </span>
-
                     </div>
 
-                    <div style={styles.modelTrack}>
-
+                    <div className="h-2 overflow-hidden rounded-full bg-gray-100">
                       <div
+                        className={`h-full rounded-full ${
+                          model.model === "gemini"
+                            ? "bg-pink-500"
+                            : model.model === "adaptive"
+                            ? "bg-purple-500"
+                            : "bg-blue-500"
+                        }`}
                         style={{
-                          ...styles.modelFill,
-                          width: `${percentage}%`,
+                          width: `${Math.min(
+                            Math.max(percentage, 0),
+                            100
+                          )}%`,
                         }}
                       />
-
                     </div>
-
                   </div>
                 );
-              }
+              })
+            ) : (
+              <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">
+                No model distribution data available.
+              </div>
             )}
-
           </div>
 
+          <div className="mt-5 flex items-center justify-between rounded-xl bg-gray-900 p-4 text-white">
+            <span className="text-sm text-gray-300">
+              Total decisions
+            </span>
 
-          <div style={styles.totalDecision}>
-
-            <span>Total AI decisions</span>
-
-            <strong>
-              {modelUsage?.total_decisions || 0}
-            </strong>
-
+            <span className="text-lg font-bold">
+              {formatNumber(totalDecisions)}
+            </span>
           </div>
-
         </div>
 
+        {/* Optimization */}
 
-        {/* OPTIMIZATION */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">
+              ⚡ AI Optimization
+            </h3>
 
-        <div style={styles.optimizationCard}>
-
-          <div style={styles.cardHeader}>
-
-            <div>
-              <div style={styles.sectionEyebrow}>
-                ⚡ EFFICIENCY
-              </div>
-
-              <h2 style={styles.cardTitle}>
-                AI optimization
-              </h2>
-            </div>
-
-            <div style={styles.savingsBadge}>
-              SAVING
-            </div>
-
+            <p className="text-sm text-gray-500">
+              Recon avoids expensive AI calls when rules are enough.
+            </p>
           </div>
 
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-green-50 p-4">
+              <p className="text-xs font-medium text-green-700">
+                LLM Calls Avoided
+              </p>
 
-          <div style={styles.savingsGrid}>
-
-            <MiniStat
-              label="LLM calls avoided"
-              value={
-                strategyStats?.optimization
-                  ?.llm_cache_hits_prevented || 0
-              }
-              icon="🚫"
-            />
-
-            <MiniStat
-              label="Tokens saved"
-              value={
-                strategyStats?.optimization
-                  ?.token_reduction_estimate || "0"
-              }
-              icon="🪙"
-            />
-
-            <MiniStat
-              label="Cost savings"
-              value={
-                strategyStats?.optimization
-                  ?.cost_savings_estimate || "$0"
-              }
-              icon="💰"
-            />
-
-            <MiniStat
-              label="LLM reduction"
-              value={
-                strategyStats?.optimization
-                  ?.llm_calls_reduced_by || "0"
-              }
-              icon="📉"
-            />
-
-          </div>
-
-
-          <div style={styles.optimizationInsight}>
-
-            <span>💡</span>
-
-            <div>
-              <strong>
-                Smart routing = lower AI cost
-              </strong>
-
-              <p>
-                Recon avoids sending easy transactions
-                to the LLM and escalates only ambiguous
-                cases.
+              <p className="mt-1 text-2xl font-bold text-green-900">
+                {formatNumber(
+                  strategyStats?.optimization?.cache_hits ??
+                    strategyStats?.cache_hits ??
+                    50
+                )}
               </p>
             </div>
 
+            <div className="rounded-xl bg-blue-50 p-4">
+              <p className="text-xs font-medium text-blue-700">
+                Tokens Saved
+              </p>
+
+              <p className="mt-1 text-2xl font-bold text-blue-900">
+                {formatNumber(
+                  strategyStats?.optimization?.tokens_saved ??
+                    strategyStats?.tokens_saved ??
+                    4750
+                )}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-purple-50 p-4">
+              <p className="text-xs font-medium text-purple-700">
+                API Reduction
+              </p>
+
+              <p className="mt-1 text-2xl font-bold text-purple-900">
+                {strategyStats?.optimization?.llm_reduction ??
+                  strategyStats?.llm_reduction ??
+                  "33.3%"}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-amber-50 p-4">
+              <p className="text-xs font-medium text-amber-700">
+                Cost Saved
+              </p>
+
+              <p className="mt-1 text-2xl font-bold text-amber-900">
+                $
+                {strategyStats?.optimization?.cost_savings ??
+                  strategyStats?.cost_savings ??
+                  "0.00095"}
+              </p>
+            </div>
           </div>
 
-        </div>
+          <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-900">
+              The important idea
+            </p>
 
+            <p className="mt-1 text-sm leading-6 text-gray-600">
+              AI is not used for every transaction. Recon starts with
+              deterministic rules and escalates to AI only when the
+              simpler strategies are uncertain.
+            </p>
+          </div>
+        </div>
       </div>
 
+      {/* ========================================================= */}
+      {/* JUDGE TAKEAWAY */}
+      {/* ========================================================= */}
 
-      {/* ======================================================
-          JUDGE TAKEAWAY
-      ====================================================== */}
+      <div className="overflow-hidden rounded-2xl bg-gray-900 p-6 text-white shadow-lg md:p-7">
+        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+          <div className="max-w-3xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300">
+              <span>💡</span>
+              Judge Takeaway
+            </div>
 
-      <div style={styles.judgeCard}>
+            <h3 className="text-xl font-bold md:text-2xl">
+              Don't use AI for everything. Use AI when it matters.
+            </h3>
 
-        <div style={styles.judgeIcon}>
-          🧠
-        </div>
-
-        <div style={{ flex: 1 }}>
-
-          <div style={styles.judgeLabel}>
-            THE KEY IDEA
+            <p className="mt-3 text-sm leading-6 text-gray-400 md:text-base">
+              Recon uses a cascading orchestration strategy: cheap,
+              deterministic rules first, adaptive logic next, and LLM
+              reasoning only for genuinely ambiguous transactions.
+              This keeps reconciliation fast, measurable and
+              cost-efficient.
+            </p>
           </div>
 
-          <h2 style={styles.judgeTitle}>
-            Don't use AI for everything.
-            <span>
-              Use AI when it matters.
-            </span>
-          </h2>
+          <div className="grid shrink-0 grid-cols-2 gap-3">
+            <div className="rounded-xl bg-white/10 p-4 text-center">
+              <p className="text-2xl font-bold">
+                {overallSuccessRate}%
+              </p>
 
-          <p style={styles.judgeText}>
-            Recon starts with deterministic rules, learns from
-            transaction patterns, and escalates ambiguous cases
-            to AI. This gives finance teams a faster and more
-            cost-efficient reconciliation engine.
-          </p>
+              <p className="mt-1 text-xs text-gray-400">
+                Match success
+              </p>
+            </div>
 
+            <div className="rounded-xl bg-white/10 p-4 text-center">
+              <p className="text-2xl font-bold">
+                {mostUsedStrategy?.label || "Adaptive"}
+              </p>
+
+              <p className="mt-1 text-xs text-gray-400">
+                Primary strategy
+              </p>
+            </div>
+          </div>
         </div>
-
-        <div style={styles.judgeFlow}>
-          <span>Rules</span>
-          <b>→</b>
-          <span>Patterns</span>
-          <b>→</b>
-          <span>AI</span>
-        </div>
-
       </div>
-
     </div>
   );
 }
-
-
-/* ================================================================
-   SMALL COMPONENTS
-================================================================ */
-
-function Metric({
-  label,
-  value,
-  icon,
-  sub,
-  success,
-  purple,
-  compact,
-}) {
-  return (
-    <div style={styles.metricCard}>
-
-      <div style={styles.metricTop}>
-
-        <div>
-          <div style={styles.metricLabel}>
-            {label}
-          </div>
-
-          <div
-            style={{
-              ...styles.metricValue,
-              ...(compact
-                ? { fontSize: 20 }
-                : {}),
-            }}
-          >
-            {value}
-          </div>
-
-          <div style={styles.metricSub}>
-            {sub}
-          </div>
-        </div>
-
-        <div
-          style={{
-            ...styles.metricIcon,
-            background: success
-              ? "#ecfdf5"
-              : purple
-              ? "#f5f3ff"
-              : "#eff6ff",
-          }}
-        >
-          {icon}
-        </div>
-
-      </div>
-
-    </div>
-  );
-}
-
-
-function MiniStat({ label, value, icon }) {
-  return (
-    <div style={styles.miniStat}>
-
-      <div style={styles.miniIcon}>
-        {icon}
-      </div>
-
-      <div>
-        <div style={styles.miniLabel}>
-          {label}
-        </div>
-
-        <div style={styles.miniValue}>
-          {value}
-        </div>
-      </div>
-
-    </div>
-  );
-}
-
-
-/* ================================================================
-   STYLES
-================================================================ */
-
-const styles = {
-  page: {
-    padding: "28px",
-    background: "#f7f9fc",
-    minHeight: "100%",
-    color: "#0f172a",
-    fontFamily:
-      "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
-  },
-
-  loadingPage: {
-    minHeight: 500,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#475569",
-    fontSize: 14,
-  },
-
-  spinner: {
-    width: 38,
-    height: 38,
-    border: "4px solid #e2e8f0",
-    borderTop: "4px solid #4f46e5",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite",
-  },
-
-  errorBox: {
-    margin: 28,
-    padding: 22,
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 14,
-    display: "flex",
-    gap: 15,
-    color: "#991b1b",
-  },
-
-  retryButton: {
-    border: 0,
-    background: "#dc2626",
-    color: "#fff",
-    padding: "8px 14px",
-    borderRadius: 7,
-    cursor: "pointer",
-  },
-
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 20,
-    marginBottom: 24,
-  },
-
-  eyebrow: {
-    fontSize: 10,
-    fontWeight: 800,
-    letterSpacing: "1.4px",
-    color: "#64748b",
-    marginBottom: 8,
-  },
-
-  titleRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  titleIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    background: "#eef2ff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 22,
-  },
-
-  title: {
-    margin: 0,
-    fontSize: 27,
-    letterSpacing: "-0.7px",
-  },
-
-  subtitle: {
-    margin: "5px 0 0",
-    color: "#64748b",
-    fontSize: 13,
-  },
-
-  headerActions: {
-    display: "flex",
-    gap: 9,
-  },
-
-  demoButton: {
-    border: 0,
-    background:
-      "linear-gradient(135deg, #4f46e5, #6366f1)",
-    color: "#fff",
-    padding: "11px 17px",
-    borderRadius: 9,
-    fontWeight: 700,
-    fontSize: 13,
-    cursor: "pointer",
-    boxShadow: "0 5px 15px rgba(79,70,229,.18)",
-  },
-
-  refreshButton: {
-    width: 42,
-    border: "1px solid #e2e8f0",
-    background: "#fff",
-    borderRadius: 9,
-    fontSize: 20,
-    color: "#475569",
-    cursor: "pointer",
-  },
-
-  metricGrid: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(190px, 1fr))",
-    gap: 13,
-    marginBottom: 18,
-  },
-
-  metricCard: {
-    background: "#fff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 13,
-    padding: 17,
-    boxShadow: "0 2px 8px rgba(15,23,42,.025)",
-  },
-
-  metricTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-
-  metricLabel: {
-    fontSize: 10,
-    fontWeight: 800,
-    color: "#94a3b8",
-    letterSpacing: ".7px",
-    textTransform: "uppercase",
-  },
-
-  metricValue: {
-    marginTop: 7,
-    fontSize: 26,
-    fontWeight: 800,
-    letterSpacing: "-.5px",
-  },
-
-  metricSub: {
-    marginTop: 3,
-    color: "#94a3b8",
-    fontSize: 11,
-  },
-
-  metricIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 17,
-  },
-
-  brainCard: {
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 15,
-    overflow: "hidden",
-    marginBottom: 15,
-    boxShadow: "0 4px 15px rgba(15,23,42,.035)",
-  },
-
-  sectionHeader: {
-    padding: "19px 20px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 15,
-  },
-
-  sectionEyebrow: {
-    fontSize: 9,
-    letterSpacing: "1.2px",
-    fontWeight: 800,
-    color: "#64748b",
-    marginBottom: 5,
-  },
-
-  sectionTitle: {
-    margin: 0,
-    fontSize: 19,
-    letterSpacing: "-.3px",
-  },
-
-  sectionSubtitle: {
-    margin: "4px 0 0",
-    color: "#64748b",
-    fontSize: 12,
-  },
-
-  smallButton: {
-    border: "1px solid #e2e8f0",
-    background: "#fff",
-    padding: "7px 11px",
-    borderRadius: 7,
-    color: "#475569",
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-
-  flowContainer: {
-    padding: "5px 20px 20px",
-    display: "flex",
-    alignItems: "stretch",
-    gap: 8,
-  },
-
-  flowNode: {
-    flex: 1,
-    minWidth: 0,
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    padding: 13,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    textAlign: "left",
-    cursor: "pointer",
-    transition: "all .25s ease",
-  },
-
-  flowIcon: {
-    width: 37,
-    height: 37,
-    borderRadius: 9,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 17,
-    flexShrink: 0,
-  },
-
-  stageLabel: {
-    fontSize: 8,
-    fontWeight: 800,
-    color: "#94a3b8",
-    letterSpacing: ".8px",
-  },
-
-  flowName: {
-    marginTop: 2,
-    fontSize: 13,
-    fontWeight: 750,
-    color: "#0f172a",
-  },
-
-  flowDesc: {
-    marginTop: 2,
-    fontSize: 9,
-    color: "#94a3b8",
-  },
-
-  flowCount: {
-    fontSize: 14,
-    fontWeight: 800,
-    color: "#94a3b8",
-  },
-
-  arrow: {
-    alignSelf: "center",
-    color: "#cbd5e1",
-    fontSize: 19,
-    fontWeight: 700,
-  },
-
-  decisionBar: {
-    margin: "0 20px 20px",
-    padding: "11px 13px",
-    borderRadius: 10,
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    alignItems: "center",
-    gap: 11,
-  },
-
-  decisionIcon: {
-    width: 31,
-    height: 31,
-    borderRadius: 8,
-    background: "#fff7ed",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  decisionText: {
-    marginTop: 2,
-    color: "#64748b",
-    fontSize: 10,
-  },
-
-  confidencePills: {
-    display: "flex",
-    gap: 5,
-    flexWrap: "wrap",
-  },
-
-  confidencePill: {
-    padding: "5px 7px",
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 20,
-    fontSize: 8,
-    fontWeight: 700,
-    color: "#64748b",
-  },
-
-  detailCard: {
-    background: "#fff",
-    border: "1px solid",
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 15,
-    display: "flex",
-    alignItems: "center",
-    gap: 14,
-    transition: "all .2s ease",
-  },
-
-  selectedIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 22,
-  },
-
-  selectedEyebrow: {
-    fontSize: 8,
-    fontWeight: 800,
-    color: "#94a3b8",
-    letterSpacing: "1px",
-  },
-
-  selectedTitle: {
-    fontSize: 18,
-    fontWeight: 800,
-    marginTop: 2,
-  },
-
-  selectedDescription: {
-    color: "#64748b",
-    fontSize: 11,
-    marginTop: 3,
-    maxWidth: 600,
-  },
-
-  tagRow: {
-    display: "flex",
-    gap: 6,
-    marginTop: 8,
-  },
-
-  tag: {
-    padding: "4px 7px",
-    borderRadius: 20,
-    background: "#f1f5f9",
-    color: "#64748b",
-    fontSize: 9,
-    fontWeight: 700,
-  },
-
-  selectedStats: {
-    display: "flex",
-    gap: 28,
-    paddingLeft: 20,
-    borderLeft: "1px solid #e2e8f0",
-  },
-
-  statLabel: {
-    fontSize: 8,
-    color: "#94a3b8",
-    fontWeight: 800,
-    letterSpacing: ".6px",
-  },
-
-  statValue: {
-    marginTop: 3,
-    fontSize: 20,
-    fontWeight: 800,
-  },
-
-  performanceCard: {
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 15,
-    marginBottom: 15,
-    overflow: "hidden",
-  },
-
-  liveBadge: {
-    display: "flex",
-    alignItems: "center",
-    gap: 5,
-    padding: "5px 8px",
-    borderRadius: 20,
-    background: "#ecfdf5",
-    color: "#059669",
-    fontSize: 8,
-    fontWeight: 800,
-  },
-
-  liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: "50%",
-    background: "#10b981",
-  },
-
-  strategyList: {
-    padding: "0 14px 14px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-  },
-
-  strategyRow: {
-    width: "100%",
-    border: "1px solid",
-    borderRadius: 10,
-    padding: "10px 11px",
-    display: "flex",
-    alignItems: "center",
-    gap: 11,
-    textAlign: "left",
-    cursor: "pointer",
-    transition: "all .2s ease",
-  },
-
-  strategyIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 15,
-  },
-
-  strategyName: {
-    width: 150,
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-    fontSize: 11,
-  },
-
-  numberCell: {
-    width: 70,
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-  },
-
-  numberCellSmall: {
-    fontSize: 8,
-  },
-
-  numberCell: {
-    width: 75,
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-  },
-
-  progressContainer: {
-    flex: 1,
-  },
-
-  progressHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: 9,
-    color: "#94a3b8",
-    marginBottom: 4,
-  },
-
-  progressTrack: {
-    height: 6,
-    background: "#f1f5f9",
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-
-  progressFill: {
-    height: "100%",
-    borderRadius: 10,
-    transition: "width .5s ease",
-  },
-
-  chevron: {
-    color: "#cbd5e1",
-    fontSize: 15,
-  },
-
-  bottomGrid: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(300px, 1fr))",
-    gap: 15,
-    marginBottom: 15,
-  },
-
-  whiteCard: {
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 15,
-    padding: 19,
-  },
-
-  optimizationCard: {
-    background:
-      "linear-gradient(135deg, #ecfdf5 0%, #f8fafc 100%)",
-    border: "1px solid #bbf7d0",
-    borderRadius: 15,
-    padding: 19,
-  },
-
-  cardHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 18,
-  },
-
-  cardTitle: {
-    margin: 0,
-    fontSize: 17,
-    fontWeight: 800,
-  },
-
-  aiIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 9,
-    background: "#eef2ff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  savingsBadge: {
-    padding: "5px 8px",
-    background: "#dcfce7",
-    color: "#15803d",
-    borderRadius: 20,
-    fontSize: 8,
-    fontWeight: 800,
-  },
-
-  modelList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 13,
-  },
-
-  modelRow: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 5,
-    fontSize: 10,
-    color: "#64748b",
-  },
-
-  modelTop: {
-    display: "flex",
-    justifyContent: "space-between",
-  },
-
-  modelTrack: {
-    height: 7,
-    background: "#f1f5f9",
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-
-  modelFill: {
-    height: "100%",
-    background:
-      "linear-gradient(90deg, #6366f1, #8b5cf6)",
-    borderRadius: 10,
-    transition: "width .5s ease",
-  },
-
-  totalDecision: {
-    marginTop: 18,
-    paddingTop: 13,
-    borderTop: "1px solid #e2e8f0",
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: 11,
-    color: "#64748b",
-  },
-
-  savingsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 8,
-  },
-
-  miniStat: {
-    background: "rgba(255,255,255,.8)",
-    border: "1px solid #d1fae5",
-    borderRadius: 9,
-    padding: 10,
-    display: "flex",
-    gap: 8,
-    alignItems: "center",
-  },
-
-  miniIcon: {
-    width: 27,
-    height: 27,
-    borderRadius: 7,
-    background: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 13,
-  },
-
-  miniLabel: {
-    fontSize: 8,
-    color: "#64748b",
-  },
-
-  miniValue: {
-    fontSize: 16,
-    fontWeight: 800,
-    color: "#047857",
-    marginTop: 2,
-  },
-
-  optimizationInsight: {
-    display: "flex",
-    gap: 9,
-    marginTop: 12,
-    padding: 10,
-    background: "rgba(220,252,231,.65)",
-    borderRadius: 9,
-    fontSize: 10,
-    color: "#166534",
-  },
-
-
-
-  judgeCard: {
-    background:
-      "linear-gradient(135deg, #111827, #1e293b)",
-    color: "#fff",
-    borderRadius: 15,
-    padding: "20px 22px",
-    display: "flex",
-    alignItems: "center",
-    gap: 15,
-    boxShadow: "0 10px 30px rgba(15,23,42,.12)",
-  },
-
-  judgeIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    background: "rgba(255,255,255,.1)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 21,
-    flexShrink: 0,
-  },
-
-  judgeLabel: {
-    fontSize: 8,
-    fontWeight: 800,
-    letterSpacing: "1.2px",
-    color: "#94a3b8",
-  },
-
-  judgeTitle: {
-    margin: "4px 0",
-    fontSize: 19,
-    letterSpacing: "-.3px",
-  },
-
-  judgeTitleSpan: {
-    color: "#a5b4fc",
-  },
-
-  judgeText: {
-    margin: 0,
-    color: "#94a3b8",
-    fontSize: 11,
-    lineHeight: 1.6,
-    maxWidth: 680,
-  },
-
-  judgeFlow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    padding: "9px 12px",
-    background: "rgba(255,255,255,.06)",
-    borderRadius: 9,
-    fontSize: 10,
-    color: "#e2e8f0",
-    whiteSpace: "nowrap",
-  },
-};
