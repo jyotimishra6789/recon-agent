@@ -6,7 +6,7 @@ const PIPELINE_STAGES = [
     number: 1,
     id: "deterministic",
     label: "Deterministic",
-    icon: "⚙️",
+    
     confidence: "≥ 95%",
     description: "Fast rule-based matching on exact amounts, references and date tolerance.",
     color: "#3b82f6",
@@ -15,7 +15,7 @@ const PIPELINE_STAGES = [
     number: 2,
     id: "adaptive",
     label: "Adaptive",
-    icon: "🎯",
+  
     confidence: "≥ 85%",
     description: "Learned patterns — fees, settlement delays, recurring behaviors.",
     color: "#8b5cf6",
@@ -24,7 +24,7 @@ const PIPELINE_STAGES = [
     number: 3,
     id: "llm_fuzzy",
     label: "LLM Fuzzy",
-    icon: "🤖",
+  
     confidence: "≥ 70%",
     description: "Gemini reads descriptions and ambiguous context — only when the first two can't confidently resolve it.",
     color: "#ec4899",
@@ -33,7 +33,7 @@ const PIPELINE_STAGES = [
     number: 4,
     id: "hybrid",
     label: "Hybrid",
-    icon: "🔀",
+   
     confidence: "Final",
     description: "Combines amount, date and contextual signals as a last decision layer.",
     color: "#f59e0b",
@@ -145,7 +145,7 @@ export default function OrchestrationInsights() {
     <div className="orch-page">
       <div className="orch-header">
         <div>
-          <div className="orch-header-title"><span>🧠</span><h2>Orchestration</h2></div>
+          <div className="orch-header-title"><span></span><h2>Orchestration</h2></div>
           <p>The decision engine picks the simplest reliable strategy first.</p>
         </div>
         <div className="orch-header-actions">

@@ -12,7 +12,7 @@ export default function SummaryCards({ reconcileResult, timeSaved }) {
     <div className="summary-grid">
       <div className="stat-card">
         <div className="stat-card-top">
-          <span className="stat-icon blue">🗄</span>
+          <span className="stat-icon blue"></span>
         </div>
         <div className="stat-label">Total Reconciled</div>
         <div className="stat-value success">{matched}</div>

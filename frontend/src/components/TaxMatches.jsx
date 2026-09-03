@@ -70,7 +70,7 @@ export default function TaxMatches() {
       {taxSummary && (
         <section className="panel insights-card">
           <div className="insights-heading">
-            <span className="stat-icon blue">📊</span>
+            <span className="stat-icon blue"></span>
             <div><b>Tax Match Insights</b><small>Quick stats for the selected period</small></div>
           </div>
           <div className="insights-body">
