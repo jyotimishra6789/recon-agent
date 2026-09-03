@@ -304,6 +304,17 @@ tbody tr:hover { background: #f7fbf8; }
 .receipt-upload-row button { padding: 10px 13px; border: 0; border-radius: 6px; background: var(--teal); color: white; cursor: pointer; font-size: 11px; font-weight: 800; }
 .receipt-upload-row button:disabled { cursor: wait; opacity: .55; }
 .receipt-upload-status { margin-top: 8px; color: var(--muted); font-size: 11px; }
+
+.data-import { margin-bottom: 20px; padding: 14px 16px; border: 1px solid var(--line); background: white; }
+.data-import-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.data-import-slot { display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px dashed var(--line-strong); border-radius: 6px; }
+.data-import-label { color: var(--ink); font-size: 11px; font-weight: 800; }
+.data-import-slot input[type="file"] { padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: 6px; font-size: 10px; }
+.data-import-hint { color: var(--muted); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.data-import-actions button { padding: 10px 13px; border: 0; border-radius: 6px; background: var(--teal); color: white; cursor: pointer; font-size: 11px; font-weight: 800; }
+.data-import-actions button:disabled { cursor: wait; opacity: .55; }
+.data-import-results { margin: 10px 0 0; padding: 0; list-style: none; color: var(--ink-soft); font-size: 11px; display: grid; gap: 3px; }
 .chat-panel { display: flex; min-height: 400px; flex-direction: column; overflow: hidden; overscroll-behavior: contain; }
 .chat-messages { display: flex; min-height: 260px; flex: 1; flex-direction: column; gap: 10px; padding: 16px; background: #fbfcfa; overscroll-behavior: contain; }
 .chat-msg { max-width: 92%; padding: 11px 12px; border-radius: 8px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }

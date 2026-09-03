@@ -7,6 +7,7 @@ import AuditTrail from "./components/AuditTrail";
 import ChatbotQA from "./components/ChatbotQA";
 import CloseControl from "./components/CloseControl";
 import ReceiptUpload from "./components/ReceiptUpload";
+import DataImport from "./components/DataImport";
 import CashForecast from "./components/CashForecast";
 import TaxMatches from "./components/TaxMatches";
 import OrchestrationInsights from "./components/OrchestrationInsights";
@@ -179,6 +180,8 @@ export default function App() {
         onSignOff={handleSignOff}
         onNewPeriod={handleNewPeriod}
       />
+
+      <DataImport onImported={() => { setError(null); return refreshAll(); }} />
 
       <ReceiptUpload onProcessed={() => { setError(null); return refreshAll(); }} />
 

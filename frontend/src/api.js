@@ -87,6 +87,17 @@ export const api = {
     if (!res.ok) throw new Error(body.detail || `Request failed: ${res.status}`);
     return body;
   },
+  importSource: async (source, file) => {
+    if (!BASE_URL) {
+      throw new Error("Backend API is not configured for this deployment. Set REACT_APP_API_URL in Vercel and redeploy.");
+    }
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE_URL}/import/${source}`, { method: "POST", body: form });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || `Request failed: ${res.status}`);
+    return body;
+  },
   getTaxMatches: () => request("/tax-matches"),
   getTaxSummary: () => request("/tax-summary"),
   getStrategyStats: () => request("/orchestration/strategy-stats"),

@@ -15,6 +15,8 @@ import sqlite3
 import json
 import os
 import re
+import csv
+import io
 import uuid
 import threading
 from datetime import datetime, timezone
@@ -147,6 +149,99 @@ def reconcile():
         raise HTTPException(503, f"Reconciliation database is temporarily busy: {error}")
     last_reconcile_result = result
     return result
+
+
+IMPORT_SPECS = {
+    "bank": {
+        "table": "bank_txns",
+        "columns": ["ref_id", "txn_date", "amount", "description"],
+        "numeric": ["amount"],
+    },
+    "settlement": {
+        "table": "settlement_txns",
+        "columns": ["order_id", "settle_date", "amount", "gross_amount", "fee"],
+        "numeric": ["amount", "gross_amount", "fee"],
+    },
+    "ledger": {
+        "table": "ledger_txns",
+        "columns": ["invoice_id", "invoice_date", "amount", "customer_name"],
+        "numeric": ["amount"],
+    },
+    "tax": {
+        "table": "tax_txns",
+        "columns": ["tax_id", "invoice_id", "tax_date", "tax_type", "tax_rate", "base_amount", "tax_amount", "description"],
+        "numeric": ["tax_rate", "base_amount", "tax_amount"],
+    },
+}
+
+
+@app.post("/import/{source}")
+async def import_source_csv(source: str, file: UploadFile = File(...)):
+    """Replace bank / settlement / ledger / tax data with an uploaded CSV.
+    Column headers must match exactly (see IMPORT_SPECS)."""
+    spec = IMPORT_SPECS.get(source)
+    if not spec:
+        raise HTTPException(404, f"Unknown import source '{source}'. Use one of: {', '.join(IMPORT_SPECS)}")
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(400, "Uploaded file is empty")
+    try:
+        text = contents.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "File must be UTF-8 encoded CSV")
+
+    reader = csv.DictReader(io.StringIO(text))
+    fieldnames = [c.strip() for c in (reader.fieldnames or [])]
+    missing = [c for c in spec["columns"] if c not in fieldnames]
+    if missing:
+        raise HTTPException(
+            400,
+            f"CSV is missing required column(s): {', '.join(missing)}. "
+            f"Expected headers: {', '.join(spec['columns'])}",
+        )
+
+    rows, errors = [], []
+    for i, raw in enumerate(reader, start=2):  # row 1 is the header
+        row = {c: (raw.get(c) or "").strip() for c in spec["columns"]}
+        required = [c for c in spec["columns"] if c != "description"]
+        if not all(row.get(c) for c in required):
+            errors.append(f"Row {i}: missing a required value")
+            continue
+        try:
+            for num_col in spec["numeric"]:
+                row[num_col] = float(row[num_col])
+        except ValueError:
+            errors.append(f"Row {i}: '{num_col}' is not a number")
+            continue
+        rows.append(row)
+
+    if not rows:
+        raise HTTPException(400, f"No valid rows found. {'; '.join(errors[:5])}")
+
+    conn = get_conn()
+    table = spec["table"]
+    col_list = ", ".join(spec["columns"])
+    placeholders = ", ".join(f":{c}" for c in spec["columns"])
+    try:
+        conn.execute(f"DELETE FROM {table}")
+        conn.executemany(f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})", rows)
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(400, f"Duplicate or invalid ID in the CSV: {e}")
+    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    conn.close()
+
+    return {
+        "source": source,
+        "table": table,
+        "rows_imported": len(rows),
+        "rows_skipped": len(errors),
+        "row_errors": errors[:10],
+        "total_in_table": count,
+    }
 
 
 @app.get("/stats/summary")
