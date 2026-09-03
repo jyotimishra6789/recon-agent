@@ -30,3 +30,5 @@ Thumbs.db
 
 # Local demo documentation
 PROJECT_VIDEO_DEMO_GUIDE.md
+# Ignore all Markdown files
+*.md
