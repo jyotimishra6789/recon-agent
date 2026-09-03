@@ -12,7 +12,7 @@ import TaxMatches from "./components/TaxMatches";
 import OrchestrationInsights from "./components/OrchestrationInsights";
 
 const TABS = [
-  { id: "matches", label: "Recent Transactions" },
+  { id: "matches", label: "Matches" },
   { id: "tax", label: "Tax Matches" },
   { id: "orchestration", label: "Orchestration" },
   { id: "exceptions", label: "Exceptions" },
@@ -21,14 +21,18 @@ const TABS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("matches");
+  const workAreaRef = useRef(null);
+
+  // Sidebar nav items map to real tabs in the work-area table below.
+  // Clicking one both switches the tab and scrolls it into view, since
+  // the tabs live further down the page than the sidebar click target.
+  const goToTab = (tabId) => {
+    setActiveTab(tabId);
+    workAreaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const [chatOpen, setChatOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
-
-  const cashForecastRef = useRef(null);
-  const closeControlRef = useRef(null);
-  const receiptUploadRef = useRef(null);
-  const recordsRef = useRef(null);
-  const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const [reconcileResult, setReconcileResult] = useState(null);
   const [timeSaved, setTimeSaved] = useState(null);
@@ -115,92 +119,84 @@ export default function App() {
         <div className="workspace-switcher"><span className="workspace-avatar">AC</span><span><b>Acme Corporation</b><small>Finance workspace</small></span><span className="chevron">⌄</span></div>
         <nav className="nav-list" aria-label="Main navigation">
           <span className="nav-label">Workspace</span>
-          <button className="nav-item active"><span>▦</span>Overview</button>
-          <button className="nav-item"><span>⇄</span>Reconciliations</button>
-          <button className="nav-item"><span>▤</span>Transactions</button>
+          <button
+            className="nav-item"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
+            <span>▦</span>Overview
+          </button>
+          <button className={`nav-item ${activeTab === "matches" ? "active" : ""}`} onClick={() => goToTab("matches")}>
+            <span>⇄</span>Reconciliations
+          </button>
+          <button className={`nav-item ${activeTab === "matches" ? "active" : ""}`} onClick={() => goToTab("matches")}>
+            <span>▤</span>Transactions
+          </button>
           <span className="nav-label">Control centre</span>
-          <button className="nav-item"><span>◌</span>Exceptions <em>{exceptions.length || ""}</em></button>
-          <button className="nav-item"><span>✓</span>Audit trail</button>
-          <button className="nav-item"><span>⚙</span>Settings</button>
+          <button className={`nav-item ${activeTab === "exceptions" ? "active" : ""}`} onClick={() => goToTab("exceptions")}>
+            <span>◌</span>Exceptions <em>{exceptions.length || ""}</em>
+          </button>
+          <button className={`nav-item ${activeTab === "audit" ? "active" : ""}`} onClick={() => goToTab("audit")}>
+            <span>✓</span>Audit trail
+          </button>
+          <button className="nav-item" disabled title="Settings isn't built yet" style={{ opacity: 0.45, cursor: "not-allowed" }}>
+            <span>⚙</span>Settings
+          </button>
         </nav>
         <div className="sidebar-footer"><div className="status-live"><span />All systems operational</div><small>Reconciliation Agent v1.0</small></div>
       </aside>
 
       <main className="main-content">
         <div className="topbar">
-          <div className="search-bar">
-            <span className="search-icon">⌕</span>
-            <input type="text" placeholder="Search transactions, invoices, bank refs..." />
-          </div>
-          <div className="topbar-actions">
-            <button className="date-range-pill"><span>📅</span>Aug 19, 2026 — Aug 25, 2026<span className="chevron">⌄</span></button>
-            <button className="icon-button" aria-label="Notifications">♧<i className="notif-dot" /></button>
-            <div className="profile-block">
-              <span className="profile">AM</span>
-              <span className="profile-text"><b>Alex</b><small>Finance Team</small></span>
-            </div>
-          </div>
+          <div className="breadcrumb"><span>Workspace</span><b>/</b><strong>Overview</strong></div>
+          <div className="topbar-actions"><span className="last-sync">Last synced just now</span><button className="icon-button" aria-label="Notifications">♧</button><span className="profile">AM</span></div>
         </div>
         <div className="header">
           <div>
             <div className="header-eyebrow">Tuesday, 25 August 2026</div>
-            <h1>Good morning, Alex <span className="sun">☀️</span></h1>
+            <h1>Good morning, Alex.</h1>
             <div className="header-sub">Here is what's happening across your reconciliation workspace.</div>
           </div>
-          <div className="header-quote">"Accurate books. A clearer tomorrow."</div>
+          <button className="run-btn" onClick={handleRun} disabled={running}><span>↻</span>{running ? "Reconciling…" : "Run reconciliation"}</button>
         </div>
 
       {error && <div className="error-banner">{error}</div>}
 
+      <section className="source-strip panel">
+        <div><span className="section-title">Active data sources</span><strong>Connected and ready to reconcile</strong></div>
+        <div className="source-items"><span><i className="source-icon bank">⌁</i><b>Bank</b><small>57 records</small><mark>Ready</mark></span><span><i className="source-icon settlement">↔</i><b>Settlement</b><small>58 records</small><mark>Ready</mark></span><span><i className="source-icon ledger">▤</i><b>Ledger</b><small>65 records</small><mark>Ready</mark></span></div>
+      </section>
+      <div className="overview-heading"><div><span className="section-title">Reconciliation overview</span><h2>Control centre</h2></div><span className="period-pill"><span />Current period · Aug 2026</span></div>
       <SummaryCards reconcileResult={reconcileResult} timeSaved={timeSaved} />
+      <CashForecast />
+      <section className="trend-panel panel"><div className="trend-heading"><div><span className="section-title">Activity trend</span><h2>Reconciliation volume</h2></div><div className="trend-legend"><span className="matched-dot" />Matched <span className="exception-dot" />Exceptions <select defaultValue="7"><option value="7">Last 7 days</option></select></div></div><div className="trend-chart">{[42, 58, 48, 74, 56, 82, 67].map((height, index) => <div className="trend-day" key={index}><div className="bar-stack"><i style={{ height: `${height}%` }} /><b style={{ height: `${Math.max(8, height / 5)}%` }} /></div><small>{["19 Aug", "20 Aug", "21 Aug", "22 Aug", "23 Aug", "24 Aug", "Today"][index]}</small></div>)}</div></section>
 
-      <div className="chart-datasources-grid">
-        <section className="trend-panel panel"><div className="trend-heading"><div><span className="section-title">Activity trend</span><h2>Reconciliation volume</h2></div><div className="trend-legend"><span className="matched-dot" />Matched <span className="exception-dot" />Exceptions <select defaultValue="7"><option value="7">Last 7 days</option></select></div></div><div className="trend-chart">{[42, 58, 48, 74, 56, 82, 67].map((height, index) => <div className="trend-day" key={index}><div className="bar-stack"><i style={{ height: `${height}%` }} /><b style={{ height: `${Math.max(8, height / 5)}%` }} /></div><small>{["19 Aug", "20 Aug", "21 Aug", "22 Aug", "23 Aug", "24 Aug", "Today"][index]}</small></div>)}</div></section>
+      <CloseControl
+        exceptions={exceptions}
+        matches={matches}
+        auditLog={auditLog}
+        reconcileResult={reconcileResult}
+        closeState={closeState}
+        onSignOff={handleSignOff}
+        onNewPeriod={handleNewPeriod}
+      />
 
-        <aside className="datasources-panel panel">
-          <div className="datasources-heading"><span className="section-title">Data Sources</span><button className="view-all">View all <span>→</span></button></div>
-          <div className="datasource-row"><i className="source-icon bank">⌁</i><div><b>Bank</b><small>57 records</small></div><mark>Connected</mark></div>
-          <div className="datasource-row"><i className="source-icon settlement">↔</i><div><b>Settlement</b><small>58 records</small></div><mark>Connected</mark></div>
-          <div className="datasource-row"><i className="source-icon ledger">▤</i><div><b>Ledger</b><small>65 records</small></div><mark>Connected</mark></div>
-        </aside>
-      </div>
+      <ReceiptUpload onProcessed={() => { setError(null); return refreshAll(); }} />
 
-      <div ref={cashForecastRef}><CashForecast /></div>
-
-      <div ref={closeControlRef}>
-        <CloseControl
-          exceptions={exceptions}
-          matches={matches}
-          auditLog={auditLog}
-          reconcileResult={reconcileResult}
-          closeState={closeState}
-          onSignOff={handleSignOff}
-          onNewPeriod={handleNewPeriod}
-        />
-      </div>
-
-      <div ref={receiptUploadRef}><ReceiptUpload onProcessed={() => { setError(null); return refreshAll(); }} /></div>
-
-      <div className="work-area" ref={recordsRef}>
+      <div className="work-area" ref={workAreaRef}>
         <div className="records-area">
-          <div className="records-toolbar">
-            <div className="tabs">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  className={`tab ${activeTab === t.id ? "active" : ""}`}
-                  onClick={() => setActiveTab(t.id)}
-                >
-                  {t.label}
-                  {t.id === "matches" && ` (${matches.length})`}
-                  {t.id === "exceptions" && ` (${exceptions.length})`}
-                </button>
-              ))}
-            </div>
-            <div className="records-toolbar-actions">
-              <div className="table-search"><span className="search-icon">⌕</span><input type="text" placeholder="Search records..." /></div>
-              <button className="filters-btn"><span>▤</span>Filters</button>
-            </div>
+          <div className="overview-heading records-heading"><div><span className="section-title">Reconciliation records</span><h2>Latest activity</h2></div><button className="view-all" onClick={() => setActiveTab("matches")}>View all <span>→</span></button></div>
+          <div className="tabs">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                className={`tab ${activeTab === t.id ? "active" : ""}`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                {t.label}
+                {t.id === "matches" && ` (${matches.length})`}
+                {t.id === "exceptions" && ` (${exceptions.length})`}
+              </button>
+            ))}
           </div>
 
           {activeTab === "matches" && <MatchesTable matches={matches} />}
@@ -214,29 +210,13 @@ export default function App() {
 
       </div>
   </main>
-
-      <aside className="assistant-rail">
-        <section className="ai-assistant-panel panel">
-          <div className="ai-panel-heading">
-            <span className="assistant-avatar">✦</span>
-            <div><b>AI Assistant <em className="beta-badge">Beta</em></b><small>Ask anything about your finances</small></div>
-          </div>
+      <button className={`chat-launcher ${chatOpen ? "is-open" : ""}`} onClick={() => setChatOpen((open) => !open)} aria-label={chatOpen ? "Close data assistant" : "Open data assistant"}><span>{chatOpen ? "×" : "✦"}</span><b>{chatOpen ? "Close assistant" : "Ask Recon"}</b></button>
+      {chatOpen && (
+        <div className="chat-popover">
+          <div className="chat-popover-heading"><div><span className="assistant-avatar">✦</span><span><b>Recon assistant</b><small>Connected to your finance data</small></span></div><button onClick={() => setChatOpen(false)} aria-label="Close chat">×</button></div>
           <ChatbotQA />
-        </section>
-
-        <section className="quick-actions panel">
-          <span className="section-title">Quick Actions</span>
-          <button className="quick-action-btn" onClick={() => scrollTo(receiptUploadRef)}><span>⇧</span>Upload Receipt / Statement</button>
-          <button className="quick-action-btn" onClick={handleRun} disabled={running}><span>▶</span>{running ? "Reconciling…" : "Start New Reconciliation"}</button>
-          <button className="quick-action-btn" onClick={() => scrollTo(closeControlRef)}><span>▤</span>Export Report</button>
-          <button className="quick-action-btn" onClick={() => scrollTo(cashForecastRef)}><span>📈</span>Generate Cash Forecast</button>
-        </section>
-
-        <section className="promo-card">
-          <b>Turn data into clarity</b>
-          <p>AI-powered reconciliation for modern finance teams.</p>
-        </section>
-      </aside>
+        </div>
+      )}
     </div>
   );
 }
