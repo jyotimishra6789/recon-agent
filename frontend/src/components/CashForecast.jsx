@@ -3,7 +3,7 @@ import { api } from "../api";
 
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
-export default function CashForecast() {
+export default function CashForecast({ dataVersion = 0 }) {
   const [values, setValues] = useState({ current_cash: "", expected_settlements: "", upcoming_expenses: "" });
   const [forecast, setForecast] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -26,9 +26,9 @@ export default function CashForecast() {
   };
 
   useEffect(() => {
-    calculate();
+    if (dataVersion > 0) calculate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [dataVersion]);
 
   return (
     <section className="cash-forecast panel">
@@ -42,6 +42,9 @@ export default function CashForecast() {
         <label>Upcoming expenses<input type="number" min="0" step="0.01" value={values.upcoming_expenses} onChange={update("upcoming_expenses")} placeholder="120000" /></label>
         <button className="forecast-btn" type="submit" disabled={busy}>{busy ? "Calculating..." : "Calculate forecast"}</button>
       </form>
+      {!forecast && !busy && !error && (
+        <p className="forecast-placeholder">Import your bank, settlement, and ledger data above (or hit "Calculate forecast") to generate a live projection.</p>
+      )}
       {forecast && <div className="forecast-result">
         <div><span>Projected balance</span><strong className={forecast.projected_balance < 0 ? "negative" : ""}>{money(forecast.projected_balance)}</strong></div>
         <p>{money(forecast.current_cash)} + {money(forecast.expected_settlements)} - {money(forecast.upcoming_expenses)} = <b>{money(forecast.projected_balance)}</b></p>

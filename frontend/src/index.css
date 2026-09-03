@@ -304,6 +304,7 @@ tbody tr:hover { background: #f7fbf8; }
 .receipt-upload-row button { padding: 10px 13px; border: 0; border-radius: 6px; background: var(--teal); color: white; cursor: pointer; font-size: 11px; font-weight: 800; }
 .receipt-upload-row button:disabled { cursor: wait; opacity: .55; }
 .receipt-upload-status { margin-top: 8px; color: var(--muted); font-size: 11px; }
+.forecast-placeholder { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
 
 .data-import { margin-bottom: 20px; padding: 14px 16px; border: 1px solid var(--line); background: white; }
 .data-import-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }

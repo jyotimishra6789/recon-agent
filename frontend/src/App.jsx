@@ -40,6 +40,7 @@ export default function App() {
   const [matches, setMatches] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
+  const [dataImportVersion, setDataImportVersion] = useState(0);
   const [closeState, setCloseState] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("recon-period-close")) || { reviewer: "", notes: "", signedOffAt: null };
@@ -168,7 +169,7 @@ export default function App() {
       </section>
       <div className="overview-heading"><div><span className="section-title">Reconciliation overview</span><h2>Control centre</h2></div><span className="period-pill"><span />Current period · Aug 2026</span></div>
       <SummaryCards reconcileResult={reconcileResult} timeSaved={timeSaved} />
-      <CashForecast />
+      <CashForecast dataVersion={dataImportVersion} />
       <section className="trend-panel panel"><div className="trend-heading"><div><span className="section-title">Activity trend</span><h2>Reconciliation volume</h2></div><div className="trend-legend"><span className="matched-dot" />Matched <span className="exception-dot" />Exceptions <select defaultValue="7"><option value="7">Last 7 days</option></select></div></div><div className="trend-chart">{[42, 58, 48, 74, 56, 82, 67].map((height, index) => <div className="trend-day" key={index}><div className="bar-stack"><i style={{ height: `${height}%` }} /><b style={{ height: `${Math.max(8, height / 5)}%` }} /></div><small>{["19 Aug", "20 Aug", "21 Aug", "22 Aug", "23 Aug", "24 Aug", "Today"][index]}</small></div>)}</div></section>
 
       <CloseControl
@@ -181,7 +182,7 @@ export default function App() {
         onNewPeriod={handleNewPeriod}
       />
 
-      <DataImport onImported={() => { setError(null); return refreshAll(); }} />
+      <DataImport onImported={() => { setError(null); setDataImportVersion((v) => v + 1); return refreshAll(); }} />
 
       <ReceiptUpload onProcessed={() => { setError(null); return refreshAll(); }} />
 
