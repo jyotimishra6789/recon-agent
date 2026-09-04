@@ -21,6 +21,9 @@ const TABS = [
 ];
 
 export default function App() {
+  const today = new Date();
+  const fullDateLabel = today.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const periodLabel = today.toLocaleDateString("en-US", { month: "short", year: "numeric" });
   const [activeTab, setActiveTab] = useState("matches");
   const workAreaRef = useRef(null);
 
@@ -40,6 +43,7 @@ export default function App() {
   const [matches, setMatches] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
+  const [trend, setTrend] = useState([]);
   const [dataImportVersion, setDataImportVersion] = useState(0);
   const [closeState, setCloseState] = useState(() => {
     try {
@@ -50,16 +54,18 @@ export default function App() {
   });
 
   const refreshAll = useCallback(async () => {
-    const [m, e, a, t] = await Promise.all([
+    const [m, e, a, t, tr] = await Promise.all([
       api.getMatches(),
       api.getExceptions("open"),
       api.getAuditLog(),
       api.getTimeSaved(),
+      api.getTrend(),
     ]);
     setMatches(m);
     setExceptions(e);
     setAuditLog(a);
     setTimeSaved(t);
+    setTrend(tr);
   }, []);
 
   useEffect(() => {
@@ -154,7 +160,7 @@ export default function App() {
         </div>
         <div className="header">
           <div>
-            <div className="header-eyebrow">Tuesday, 25 August 2026</div>
+            <div className="header-eyebrow">{fullDateLabel}</div>
             <h1>Good morning, Alex.</h1>
             <div className="header-sub">Here is what's happening across your reconciliation workspace.</div>
           </div>
@@ -167,10 +173,10 @@ export default function App() {
         <div><span className="section-title">Active data sources</span><strong>Connected and ready to reconcile</strong></div>
         <div className="source-items"><span><i className="source-icon bank">⌁</i><b>Bank</b><small>57 records</small><mark>Ready</mark></span><span><i className="source-icon settlement">↔</i><b>Settlement</b><small>58 records</small><mark>Ready</mark></span><span><i className="source-icon ledger">▤</i><b>Ledger</b><small>65 records</small><mark>Ready</mark></span></div>
       </section>
-      <div className="overview-heading"><div><span className="section-title">Reconciliation overview</span><h2>Control centre</h2></div><span className="period-pill"><span />Current period · Aug 2026</span></div>
+      <div className="overview-heading"><div><span className="section-title">Reconciliation overview</span><h2>Control centre</h2></div><span className="period-pill"><span />Current period · {periodLabel}</span></div>
       <SummaryCards reconcileResult={reconcileResult} timeSaved={timeSaved} />
       <CashForecast dataVersion={dataImportVersion} />
-      <section className="trend-panel panel"><div className="trend-heading"><div><span className="section-title">Activity trend</span><h2>Reconciliation volume</h2></div><div className="trend-legend"><span className="matched-dot" />Matched <span className="exception-dot" />Exceptions <select defaultValue="7"><option value="7">Last 7 days</option></select></div></div><div className="trend-chart">{[42, 58, 48, 74, 56, 82, 67].map((height, index) => <div className="trend-day" key={index}><div className="bar-stack"><i style={{ height: `${height}%` }} /><b style={{ height: `${Math.max(8, height / 5)}%` }} /></div><small>{["19 Aug", "20 Aug", "21 Aug", "22 Aug", "23 Aug", "24 Aug", "Today"][index]}</small></div>)}</div></section>
+      <section className="trend-panel panel"><div className="trend-heading"><div><span className="section-title">Activity trend</span><h2>Reconciliation volume</h2></div><div className="trend-legend"><span className="matched-dot" />Matched <span className="exception-dot" />Exceptions <select defaultValue="7"><option value="7">Last 7 days</option></select></div></div><div className="trend-chart">{(() => { const maxVal = Math.max(1, ...trend.flatMap((d) => [d.matched, d.exceptions])); return trend.map((d) => <div className="trend-day" key={d.date}><div className="bar-stack"><i style={{ height: `${(d.matched / maxVal) * 100}%` }} /><b style={{ height: `${(d.exceptions / maxVal) * 100}%` }} /></div><small>{d.label}</small></div>); })()}</div></section>
 
       <CloseControl
         exceptions={exceptions}

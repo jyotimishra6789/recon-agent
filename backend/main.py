@@ -19,7 +19,7 @@ import csv
 import io
 import uuid
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -242,6 +242,33 @@ async def import_source_csv(source: str, file: UploadFile = File(...)):
         "row_errors": errors[:10],
         "total_in_table": count,
     }
+
+
+@app.get("/stats/trend")
+def reconciliation_trend():
+    """Real matched-vs-exceptions counts for the last 7 days, from actual timestamps."""
+    conn = get_conn()
+    try:
+        today = datetime.now(timezone.utc).date()
+        days = [today - timedelta(days=i) for i in range(6, -1, -1)]
+        result = []
+        for d in days:
+            d_str = d.isoformat()
+            matched = conn.execute(
+                "SELECT COUNT(*) FROM matches WHERE DATE(matched_at) = ?", (d_str,)
+            ).fetchone()[0]
+            exceptions = conn.execute(
+                "SELECT COUNT(*) FROM exceptions WHERE DATE(created_at) = ?", (d_str,)
+            ).fetchone()[0]
+            result.append({
+                "date": d_str,
+                "label": "Today" if d == today else d.strftime("%d %b"),
+                "matched": matched,
+                "exceptions": exceptions,
+            })
+        return result
+    finally:
+        conn.close()
 
 
 @app.get("/stats/summary")

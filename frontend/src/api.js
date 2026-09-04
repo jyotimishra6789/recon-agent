@@ -32,6 +32,7 @@ export const api = {
     }),
   getAuditLog: () => request("/audit-log"),
   getTimeSaved: () => request("/stats/time-saved"),
+  getTrend: () => request("/stats/trend"),
   getCashForecast: (values) => request("/stats/cash-forecast", {
     method: "POST",
     body: JSON.stringify(values),
